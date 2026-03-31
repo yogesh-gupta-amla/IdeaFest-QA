@@ -1,0 +1,224 @@
+{
+  "_description": "Sample Jira-like data for DSR Assistant v2.0 — project-level QA dashboard",
+  "date": "2026-03-31",
+  "projects": [
+    {
+      "id": "PX01",
+      "name": "Admin Dashboard Revamp",
+      "status": "in-progress",
+      "total_tasks": 9,
+      "completed_tasks": 6,
+      "deadline": "2026-04-12",
+      "color": "#2563eb"
+    },
+    {
+      "id": "PX02",
+      "name": "Subscription Billing System",
+      "status": "critical",
+      "total_tasks": 7,
+      "completed_tasks": 3,
+      "deadline": "2026-04-03",
+      "color": "#7c3aed"
+    },
+    {
+      "id": "PX03",
+      "name": "Mobile App v3.0",
+      "status": "at-risk",
+      "total_tasks": 11,
+      "completed_tasks": 4,
+      "deadline": "2026-04-22",
+      "color": "#059669"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TX01",
+      "title": "Revamp analytics dashboard UI",
+      "status": "done",
+      "assignee": "Rohan Verma",
+      "project": "PX01",
+      "priority": "high"
+    },
+    {
+      "id": "TX02",
+      "title": "Implement sidebar navigation",
+      "status": "done",
+      "assignee": "Rohan Verma",
+      "project": "PX01",
+      "priority": "medium"
+    },
+    {
+      "id": "TX03",
+      "title": "Design user settings page",
+      "status": "done",
+      "assignee": "Mehul Shah",
+      "project": "PX01",
+      "priority": "medium"
+    },
+    {
+      "id": "TX04",
+      "title": "Setup authentication APIs",
+      "status": "done",
+      "assignee": "Sneha Iyer",
+      "project": "PX01",
+      "priority": "critical"
+    },
+    {
+      "id": "TX05",
+      "title": "Write unit tests for dashboard",
+      "status": "in-progress",
+      "assignee": "Karan Malhotra",
+      "project": "PX01",
+      "priority": "medium"
+    },
+    {
+      "id": "TX06",
+      "title": "Fix table sorting issue",
+      "status": "blocked",
+      "assignee": "Aisha Khan",
+      "project": "PX01",
+      "priority": "high"
+    },
+
+    {
+      "id": "TX07",
+      "title": "Integrate payment gateway APIs",
+      "status": "done",
+      "assignee": "Sneha Iyer",
+      "project": "PX02",
+      "priority": "critical"
+    },
+    {
+      "id": "TX08",
+      "title": "Build billing UI components",
+      "status": "in-progress",
+      "assignee": "Rohan Verma",
+      "project": "PX02",
+      "priority": "high"
+    },
+    {
+      "id": "TX09",
+      "title": "Handle failed transaction retries",
+      "status": "blocked",
+      "assignee": "Sneha Iyer",
+      "project": "PX02",
+      "priority": "critical"
+    },
+    {
+      "id": "TX10",
+      "title": "Write integration test cases",
+      "status": "todo",
+      "assignee": "Karan Malhotra",
+      "project": "PX02",
+      "priority": "high"
+    },
+
+    {
+      "id": "TX11",
+      "title": "Initialize React Native setup",
+      "status": "done",
+      "assignee": "Aisha Khan",
+      "project": "PX03",
+      "priority": "high"
+    },
+    {
+      "id": "TX12",
+      "title": "Design onboarding UX",
+      "status": "done",
+      "assignee": "Mehul Shah",
+      "project": "PX03",
+      "priority": "high"
+    },
+    {
+      "id": "TX13",
+      "title": "Develop login module",
+      "status": "in-progress",
+      "assignee": "Rohan Verma",
+      "project": "PX03",
+      "priority": "high"
+    },
+    {
+      "id": "TX14",
+      "title": "Push notification integration",
+      "status": "in-progress",
+      "assignee": "Sneha Iyer",
+      "project": "PX03",
+      "priority": "medium"
+    },
+    {
+      "id": "TX15",
+      "title": "Build product listing screen",
+      "status": "todo",
+      "assignee": "Aisha Khan",
+      "project": "PX03",
+      "priority": "medium"
+    }
+  ],
+  "bugs": [
+    {
+      "id": "BX01",
+      "title": "Dashboard crash on Firefox",
+      "severity": "critical",
+      "status": "open",
+      "assignee": "Rohan Verma",
+      "project": "PX01",
+      "reported_date": "2026-03-29"
+    },
+    {
+      "id": "BX02",
+      "title": "Session timeout too short",
+      "severity": "high",
+      "status": "in-progress",
+      "assignee": "Sneha Iyer",
+      "project": "PX01",
+      "reported_date": "2026-03-28"
+    },
+    {
+      "id": "BX03",
+      "title": "Duplicate payment issue",
+      "severity": "critical",
+      "status": "open",
+      "assignee": "Sneha Iyer",
+      "project": "PX02",
+      "reported_date": "2026-03-30"
+    },
+    {
+      "id": "BX04",
+      "title": "Webhook validation failing",
+      "severity": "high",
+      "status": "open",
+      "assignee": "Aisha Khan",
+      "project": "PX02",
+      "reported_date": "2026-03-30"
+    },
+    {
+      "id": "BX05",
+      "title": "App crash on Android 13 startup",
+      "severity": "critical",
+      "status": "in-progress",
+      "assignee": "Aisha Khan",
+      "project": "PX03",
+      "reported_date": "2026-03-31"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "BLX01",
+      "title": "Payment gateway credentials pending",
+      "description": "Awaiting approval from provider for live credentials, blocking final payment testing.",
+      "owner": "Tanvi Desai",
+      "impact": "High — blocks billing completion and bug fixes",
+      "raised_date": "2026-03-29",
+      "status": "open"
+    },
+    {
+      "id": "BLX02",
+      "title": "Browser compatibility issue with Flexbox",
+      "description": "UI breaks in older browser versions, needs fallback styling.",
+      "owner": "Rohan Verma",
+      "impact": "Medium — affects dashboard UI consistency",
+      "raised_date": "2026-03-30",
+      "status": "investigating"
+    }
+  ]
+}

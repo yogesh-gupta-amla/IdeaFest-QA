@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { DashboardFilters, Priority } from "../types/qa";
-import type { Metrics, SnapshotMetrics, RAGStatus } from "../types";
+import type { Metrics, SnapshotMetrics, RAGStatus, AuthMode } from "../types";
 import { QA_THEMES, applyTheme } from "../themes";
 
 interface DashboardStore {
@@ -12,6 +12,9 @@ interface DashboardStore {
   projectMetrics: Metrics | null;
   prevProjectMetrics: SnapshotMetrics | null;
   ragOverride: RAGStatus;
+  jiraUrl: string;
+  authToken: string | null;
+  authMode: AuthMode;
   setTheme: (id: string) => void;
   setActiveSection: (section: string) => void;
   setFilters: (filters: Partial<DashboardFilters>) => void;
@@ -23,6 +26,7 @@ interface DashboardStore {
     prev: SnapshotMetrics | null,
   ) => void;
   setRagOverride: (rag: RAGStatus) => void;
+  setJiraConfig: (url: string, token: string | null, mode: AuthMode) => void;
 }
 
 const defaultFilters: DashboardFilters = {
@@ -42,6 +46,9 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   projectMetrics: null,
   prevProjectMetrics: null,
   ragOverride: null,
+  jiraUrl: "",
+  authToken: null,
+  authMode: "none",
 
   setTheme: (id) => {
     const theme = QA_THEMES.find((t) => t.id === id);
@@ -65,4 +72,7 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
     }),
 
   setRagOverride: (rag) => set({ ragOverride: rag }),
+
+  setJiraConfig: (url, token, mode) =>
+    set({ jiraUrl: url, authToken: token, authMode: mode }),
 }));

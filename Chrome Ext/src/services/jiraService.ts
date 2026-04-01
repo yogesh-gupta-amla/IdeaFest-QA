@@ -87,3 +87,54 @@ export async function fetchActiveSprint(
     error?: string;
   }>;
 }
+
+export interface RawJiraIssue {
+  key: string;
+  summary: string;
+  status: string;
+  statusCategory: string;
+  issueType: string;
+  priority: string;
+  assignee: string;
+  reporter: string;
+  project: string;
+  projectKey: string;
+  resolution: string;
+  labels: string[];
+  components: string[];
+  sprint: string;
+  created: string;
+  updated: string;
+  resolved: string | null;
+  dueDate: string | null;
+  storyPoints: number | null;
+  timeSpent: number | null;
+  timeEstimate: number | null;
+  fixVersions: string[];
+  epic: string | null;
+}
+
+export async function runJqlQuery(
+  baseUrl: string,
+  jql: string,
+  maxResults: number,
+  authToken: string | null,
+): Promise<{
+  success: boolean;
+  issues?: RawJiraIssue[];
+  total?: number;
+  error?: string;
+}> {
+  return sendMessage({
+    type: "RUN_JQL",
+    baseUrl,
+    jql,
+    maxResults,
+    authToken,
+  }) as Promise<{
+    success: boolean;
+    issues?: RawJiraIssue[];
+    total?: number;
+    error?: string;
+  }>;
+}

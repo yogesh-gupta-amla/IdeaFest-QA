@@ -12,6 +12,7 @@ import OverburntItems from "../components/QA/OverburntItems";
 import FlowImpact from "../components/QA/FlowImpact";
 import AIRecommendations from "../components/QA/AIRecommendations";
 import ProjectOverview from "../components/QA/ProjectOverview";
+import JiraExplorer from "../components/QA/JiraExplorer";
 import type { AuthMode, JiraUser } from "../types";
 
 const queryClient = new QueryClient({
@@ -32,6 +33,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   overburnt: <OverburntItems />,
   flow: <FlowImpact />,
   ai: <AIRecommendations />,
+  explorer: <JiraExplorer />,
 };
 
 interface QADashboardInnerProps {

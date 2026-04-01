@@ -59,6 +59,7 @@ export default function App() {
   const [dsrRecipient, setDsrRecipient] = useState("");
   const [showDashboard, setShowDashboard] = useState(false);
   const [showQADashboard, setShowQADashboard] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [pendingProject, setPendingProject] = useState<{
     key: string;
     name: string;
@@ -73,13 +74,14 @@ export default function App() {
 
   // Initialise from storage on mount
   useEffect(() => {
-    storageGet([
-      "theme",
-      "jiraUrl",
-      "jiraEmail",
-      "jiraTokenB64",
-      "authMode",
-    ]).then((stored) => {
+    (async () => {
+      const stored = await storageGet([
+        "theme",
+        "jiraUrl",
+        "jiraEmail",
+        "jiraTokenB64",
+        "authMode",
+      ]);
       const t = (stored.theme as Theme) || "dark";
       setTheme(t);
       if (stored.jiraUrl) setJiraUrl(stored.jiraUrl as string);
@@ -88,13 +90,14 @@ export default function App() {
         const mode = stored.authMode as AuthMode;
         setAuthMode(mode);
         if (stored.jiraUrl && (mode === "session" || mode === "token")) {
-          attemptAutoConnect(
+          await attemptAutoConnect(
             stored.jiraUrl as string,
             mode === "token" ? (stored.jiraTokenB64 as string | null) : null,
-          );
+          ).catch(() => {});
         }
       }
-    });
+      setInitializing(false);
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const attemptAutoConnect = useCallback(
@@ -119,6 +122,9 @@ export default function App() {
       setAuthMode(mode);
       setAuthToken(token);
       showToast(`Connected as ${connectedUser.displayName}`, "success");
+
+      // Store auth config in QA store for components like JiraExplorer
+      useDashboardStore.getState().setJiraConfig(url, token, mode);
 
       const result = await fetchProjects(url, token);
       if (result.success && result.projects) setProjects(result.projects);
@@ -323,6 +329,32 @@ export default function App() {
     setDsrRecipient(r);
     storageSet({ dsrRecipient: r });
   }, []);
+
+  if (initializing) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          background: "#0d1117",
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            border: "3px solid #334155",
+            borderTop: "3px solid #6366f1",
+            borderRadius: "50%",
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      </div>
+    );
+  }
 
   if (showQADashboard) {
     return (

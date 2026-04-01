@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import InsightsLogo from "../common/InsightsLogo";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
 
 interface LandingScreenProps {
@@ -67,7 +68,15 @@ export default function LandingScreen({
       <div style={{ width: "100%", maxWidth: 480 }}>
         {/* Logo / Title */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🧪</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: 14,
+            }}
+          >
+            <InsightsLogo size={72} />
+          </div>
           <h1
             style={{
               margin: 0,

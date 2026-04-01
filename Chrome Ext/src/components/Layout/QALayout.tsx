@@ -1,5 +1,6 @@
 import React from "react";
 import { Layout, Menu } from "antd";
+import InsightsLogo from "../common/InsightsLogo";
 import {
   DashboardOutlined,
   ClockCircleOutlined,
@@ -10,6 +11,7 @@ import {
   RobotOutlined,
   FilterOutlined,
   BarChartOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
 import { QA_THEMES } from "../../themes";
@@ -37,6 +39,7 @@ const NAV_ITEMS = [
   { key: "overburnt", icon: <FireOutlined />, label: "Overburnt Items" },
   { key: "flow", icon: <ApartmentOutlined />, label: "Flow Impact" },
   { key: "ai", icon: <RobotOutlined />, label: "AI Recommendations" },
+  { key: "explorer", icon: <SearchOutlined />, label: "Jira Explorer" },
 ];
 
 const QALayout: React.FC<QALayoutProps> = ({
@@ -83,7 +86,7 @@ const QALayout: React.FC<QALayoutProps> = ({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>🧪</span>
+            <InsightsLogo size={34} />
             <div>
               <div
                 style={{

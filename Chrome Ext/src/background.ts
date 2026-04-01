@@ -32,6 +32,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     ).then(sendResponse);
     return true;
   }
+  if (message.type === "RUN_JQL") {
+    runJqlQuery(
+      message.baseUrl,
+      message.jql,
+      message.maxResults || 500,
+      message.authToken,
+    ).then(sendResponse);
+    return true;
+  }
 });
 
 function buildFetchOptions(authToken: string | null): RequestInit {
@@ -192,6 +201,112 @@ async function fetchJiraIssues(
       };
     });
     return { success: true, total: data.total, issues };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: `Network error: ${(err as Error).message}`,
+    };
+  }
+}
+
+async function runJqlQuery(
+  baseUrl: string,
+  jql: string,
+  maxResults: number,
+  authToken: string | null,
+) {
+  try {
+    const fields = [
+      "summary",
+      "status",
+      "issuetype",
+      "priority",
+      "assignee",
+      "reporter",
+      "project",
+      "components",
+      "labels",
+      "created",
+      "updated",
+      "resolutiondate",
+      "duedate",
+      "resolution",
+      "fixVersions",
+      "customfield_10016",
+      "customfield_10020",
+      "aggregatetimespent",
+      "timeoriginalestimate",
+      "parent",
+      "subtasks",
+    ].join(",");
+    const params = new URLSearchParams({
+      jql,
+      maxResults: String(maxResults),
+      fields,
+    });
+    const res = await fetch(
+      `${baseUrl}/rest/api/3/search/jql?${params.toString()}`,
+      buildFetchOptions(authToken),
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        success: false,
+        error: `Jira API error (${res.status}): ${text.substring(0, 500)}`,
+      };
+    }
+    const data = await res.json();
+    const issues = (data.issues || []).map((issue: Record<string, unknown>) => {
+      const f = issue.fields as Record<string, unknown>;
+      const status = f.status as Record<string, unknown>;
+      const statusCat = status?.statusCategory as Record<string, unknown>;
+      const sprintField = f.customfield_10020;
+      let sprint = "";
+      if (Array.isArray(sprintField) && sprintField.length > 0) {
+        sprint =
+          ((sprintField[sprintField.length - 1] as Record<string, unknown>)
+            ?.name as string) || "";
+      }
+      return {
+        key: issue.key as string,
+        summary: (f.summary as string) || "",
+        status: (status?.name as string) || "Unknown",
+        statusCategory: (statusCat?.name as string) || "Unknown",
+        issueType:
+          ((f.issuetype as Record<string, unknown>)?.name as string) || "",
+        priority:
+          ((f.priority as Record<string, unknown>)?.name as string) || "None",
+        assignee:
+          ((f.assignee as Record<string, unknown>)?.displayName as string) ||
+          "Unassigned",
+        reporter:
+          ((f.reporter as Record<string, unknown>)?.displayName as string) ||
+          "",
+        project: ((f.project as Record<string, unknown>)?.name as string) || "",
+        projectKey:
+          ((f.project as Record<string, unknown>)?.key as string) || "",
+        resolution:
+          ((f.resolution as Record<string, unknown>)?.name as string) ||
+          "Unresolved",
+        labels: (f.labels as string[]) || [],
+        components: ((f.components as Record<string, unknown>[]) || []).map(
+          (c) => c.name as string,
+        ),
+        sprint,
+        created: (f.created as string) || "",
+        updated: (f.updated as string) || "",
+        resolved: (f.resolutiondate as string) || null,
+        dueDate: (f.duedate as string) || null,
+        storyPoints: (f.customfield_10016 as number) || null,
+        timeSpent: (f.aggregatetimespent as number) || null,
+        timeEstimate: (f.timeoriginalestimate as number) || null,
+        fixVersions: ((f.fixVersions as Record<string, unknown>[]) || []).map(
+          (v) => v.name as string,
+        ),
+        epic: ((f.parent as Record<string, unknown>)?.key as string) || null,
+      };
+    });
+    return { success: true, total: data.total as number, issues };
   } catch (err: unknown) {
     return {
       success: false,

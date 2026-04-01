@@ -56,7 +56,7 @@ export default function Header({
             />
           </svg>
         </div>
-        <h1 className="app-title">DSR Assistant</h1>
+        <h1 className="app-title">InSights AI</h1>
         {user && <span className="badge visible">{user.displayName}</span>}
       </div>
       <div className="header-right">

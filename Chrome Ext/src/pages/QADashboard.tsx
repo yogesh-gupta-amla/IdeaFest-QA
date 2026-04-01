@@ -11,6 +11,7 @@ import BugLeakage from "../components/QA/BugLeakage";
 import OverburntItems from "../components/QA/OverburntItems";
 import FlowImpact from "../components/QA/FlowImpact";
 import AIRecommendations from "../components/QA/AIRecommendations";
+import ProjectOverview from "../components/QA/ProjectOverview";
 import type { AuthMode, JiraUser } from "../types";
 
 const queryClient = new QueryClient({
@@ -23,6 +24,7 @@ const queryClient = new QueryClient({
 });
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
+  overview: <ProjectOverview />,
   health: <ProjectHealth />,
   ageing: <AgeingAnalysis />,
   "top-stories": <TopStories />,
@@ -34,16 +36,20 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
 
 interface QADashboardInnerProps {
   onBack?: () => void;
-  configPanel?: React.ReactNode;
   user?: JiraUser | null;
   authMode?: AuthMode;
+  projects?: import("../types").JiraProject[];
+  selectedProjectKey?: string;
+  onLoadProject?: (key: string, name: string) => void;
 }
 
 const QADashboardInner: React.FC<QADashboardInnerProps> = ({
   onBack,
-  configPanel,
   user,
   authMode,
+  projects,
+  selectedProjectKey,
+  onLoadProject,
 }) => {
   const { themeId, activeSection } = useDashboardStore();
   const themeConfig = getThemeById(themeId);
@@ -58,11 +64,13 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
     <ConfigProvider theme={antdTheme}>
       <QALayout
         onBack={onBack}
-        configPanel={configPanel}
         user={user}
         authMode={authMode}
+        projects={projects}
+        selectedProjectKey={selectedProjectKey}
+        onProjectChange={onLoadProject}
       >
-        {SECTION_MAP[activeSection] ?? <ProjectHealth />}
+        {SECTION_MAP[activeSection] ?? <ProjectOverview />}
       </QALayout>
     </ConfigProvider>
   );
@@ -70,24 +78,30 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
 
 interface QADashboardProps {
   onBack?: () => void;
-  configPanel?: React.ReactNode;
   user?: JiraUser | null;
   authMode?: AuthMode;
+  projects?: import("../types").JiraProject[];
+  selectedProjectKey?: string;
+  onLoadProject?: (key: string, name: string) => void;
 }
 
 const QADashboard: React.FC<QADashboardProps> = ({
   onBack,
-  configPanel,
   user,
   authMode,
+  projects,
+  selectedProjectKey,
+  onLoadProject,
 }) => {
   return (
     <QueryClientProvider client={queryClient}>
       <QADashboardInner
         onBack={onBack}
-        configPanel={configPanel}
         user={user}
         authMode={authMode}
+        projects={projects}
+        selectedProjectKey={selectedProjectKey}
+        onLoadProject={onLoadProject}
       />
     </QueryClientProvider>
   );

@@ -19,10 +19,7 @@ import type {
   SnapshotMetrics,
   Theme,
 } from "./types";
-import Header from "./components/Header/Header";
-import ConnectionPanel from "./components/ConnectionPanel/ConnectionPanel";
-import ProjectSelector from "./components/ProjectSelector/ProjectSelector";
-import Dashboard from "./components/Dashboard/index";
+import LandingScreen from "./components/Landing/LandingScreen";
 import LoadingOverlay from "./components/common/LoadingOverlay";
 import { useDashboardStore } from "./store/useStore";
 import { QA_THEMES, applyTheme } from "./themes";
@@ -61,7 +58,11 @@ export default function App() {
   const [ragOverride, setRagOverride] = useState<RAGStatus>(null);
   const [dsrRecipient, setDsrRecipient] = useState("");
   const [showDashboard, setShowDashboard] = useState(false);
-  const [showQADashboard, setShowQADashboard] = useState(true);
+  const [showQADashboard, setShowQADashboard] = useState(false);
+  const [pendingProject, setPendingProject] = useState<{
+    key: string;
+    name: string;
+  } | null>(null);
   const { themeId } = useDashboardStore();
 
   // Apply QA dashboard theme on first load
@@ -127,6 +128,8 @@ export default function App() {
         "qaNotes",
         "dsrRecipient",
         "ragOverride",
+        "lastProjectKey",
+        "lastProjectName",
       ]);
       if (saved.manualEntries)
         setManualEntries(saved.manualEntries as ManualEntry[]);
@@ -134,6 +137,12 @@ export default function App() {
       if (saved.dsrRecipient) setDsrRecipient(saved.dsrRecipient as string);
       if (saved.ragOverride !== undefined)
         setRagOverride((saved.ragOverride as RAGStatus) || null);
+      if (saved.lastProjectKey && saved.lastProjectName) {
+        setPendingProject({
+          key: saved.lastProjectKey as string,
+          name: saved.lastProjectName as string,
+        });
+      }
     },
     [showToast],
   );
@@ -248,14 +257,22 @@ export default function App() {
       const prevStr = prevDate.toISOString().slice(0, 10);
       const snapKey = (d: string) => `snap_${projectKey}_${d}`;
       const snaps = await storageGet([snapKey(prevStr), snapKey(todayStr)]);
-      setPrevMetrics((snaps[snapKey(prevStr)] as SnapshotMetrics) || null);
+      const prevM = (snaps[snapKey(prevStr)] as SnapshotMetrics) || null;
+      setPrevMetrics(prevM);
 
       const m = computeMetrics(openIssues, todayCreated, todayResolved);
       setMetrics(m);
       setShowDashboard(true);
 
+      // Store metrics in QA dashboard store and navigate to overview tab
+      const store = useDashboardStore.getState();
+      store.setProjectData(projectKey, projectName, m, prevM);
+      store.setActiveSection("overview");
+
       // Save today's snapshot
       storageSet({
+        lastProjectKey: projectKey,
+        lastProjectName: projectName,
         [snapKey(todayStr)]: {
           totalOpen: m.totalOpen,
           todayNew: m.todayNew,
@@ -270,6 +287,9 @@ export default function App() {
         `Loaded ${openIssues.length} open issues for ${projectKey}`,
         "success",
       );
+
+      // Navigate to sidebar dashboard
+      setShowQADashboard(true);
     },
     [authMode, authToken, jiraUrl, showLoading, hideLoading, showToast],
   );
@@ -280,6 +300,14 @@ export default function App() {
       manualEntries: entries as unknown as Record<string, unknown>[],
     });
   }, []);
+
+  // Auto-load last project once auth state is ready after session restore
+  useEffect(() => {
+    if (!pendingProject || !user || !jiraUrl) return;
+    const { key, name } = pendingProject;
+    setPendingProject(null);
+    handleLoadProject(key, name);
+  }, [pendingProject, user, jiraUrl, handleLoadProject]);
 
   const handleQaNotesChange = useCallback((notes: QANote[]) => {
     setQaNotes(notes);
@@ -296,52 +324,15 @@ export default function App() {
     storageSet({ dsrRecipient: r });
   }, []);
 
-  // Build the config panel rendered in the QA Dashboard's Configuration section
-  const configPanel = (
-    <div style={{ maxWidth: 700 }}>
-      <ConnectionPanel
-        initialUrl={jiraUrl}
-        authMode={authMode}
-        onConnect={handleConnect}
-      />
-      {user && (
-        <ProjectSelector
-          projects={projects}
-          onLoadProject={handleLoadProject}
-        />
-      )}
-      {showDashboard && metrics && (
-        <div style={{ textAlign: "center", marginTop: 24 }}>
-          <button
-            onClick={() => setShowQADashboard(false)}
-            style={{
-              background:
-                "linear-gradient(135deg, var(--qa-accent,#4f8ef7), #7c3aed)",
-              border: "none",
-              color: "#fff",
-              padding: "10px 28px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontWeight: 600,
-              fontSize: 14,
-              boxShadow: "0 4px 12px rgba(79,142,247,0.3)",
-            }}
-          >
-            📊 View DSR Report
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
   if (showQADashboard) {
     return (
       <>
         <LoadingOverlay visible={loading} text={loadingText} />
         <Toast toast={toast} />
         <QADashboard
-          onBack={() => setShowQADashboard(false)}
-          configPanel={configPanel}
+          projects={projects}
+          selectedProjectKey={selectedProjectKey}
+          onLoadProject={handleLoadProject}
           user={user}
           authMode={authMode}
         />
@@ -353,74 +344,14 @@ export default function App() {
     <>
       <LoadingOverlay visible={loading} text={loadingText} />
       <Toast toast={toast} />
-      <div className="container">
-        <Header
-          theme={theme}
-          onThemeChange={setTheme}
-          user={user}
-          authMode={authMode}
-        />
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            padding: "8px 16px 0",
-          }}
-        >
-          <button
-            onClick={() => setShowQADashboard(true)}
-            style={{
-              background: "linear-gradient(135deg, #4f8ef7, #7c3aed)",
-              border: "none",
-              color: "#fff",
-              padding: "8px 18px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontWeight: 600,
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              boxShadow: "0 4px 12px rgba(79,142,247,0.3)",
-            }}
-          >
-            🧪 QA Analytics Dashboard
-          </button>
-        </div>
-
-        <ConnectionPanel
-          initialUrl={jiraUrl}
-          authMode={authMode}
-          onConnect={handleConnect}
-        />
-
-        {user && (
-          <ProjectSelector
-            projects={projects}
-            onLoadProject={handleLoadProject}
-          />
-        )}
-
-        {showDashboard && metrics && (
-          <Dashboard
-            metrics={metrics}
-            prevMetrics={prevMetrics}
-            selectedProjectKey={selectedProjectKey}
-            selectedProjectName={selectedProjectName}
-            manualEntries={manualEntries}
-            qaNotes={qaNotes}
-            testingEnv={testingEnv}
-            sprintName={sprintName}
-            ragOverride={ragOverride}
-            dsrRecipient={dsrRecipient}
-            onManualEntriesChange={handleManualEntriesChange}
-            onQaNotesChange={handleQaNotesChange}
-            onRagOverrideChange={handleRagOverride}
-            onDsrRecipientChange={handleDsrRecipientChange}
-          />
-        )}
-      </div>
+      <LandingScreen
+        jiraUrl={jiraUrl}
+        authMode={authMode}
+        user={user}
+        projects={projects}
+        onConnect={handleConnect}
+        onLoadProject={handleLoadProject}
+      />
     </>
   );
 }

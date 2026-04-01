@@ -95,7 +95,16 @@ const TopStories: React.FC = () => {
 
   if (isLoading)
     return (
-      <Spin size="large" style={{ display: "block", margin: "80px auto" }} />
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "200px",
+        }}
+      >
+        <Spin size="large" />
+      </div>
     );
   if (error)
     return <Alert type="error" message="Failed to load stories data" />;

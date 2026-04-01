@@ -9,25 +9,27 @@ import {
   ApartmentOutlined,
   RobotOutlined,
   FilterOutlined,
-  SettingOutlined,
+  BarChartOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
 import { QA_THEMES } from "../../themes";
 import QAFilters from "./QAFilters";
-import type { AuthMode, JiraUser } from "../../types";
+import type { AuthMode, JiraUser, JiraProject } from "../../types";
 
 const { Sider, Content } = Layout;
 
 interface QALayoutProps {
   children: React.ReactNode;
   onBack?: () => void;
-  configPanel?: React.ReactNode;
   user?: JiraUser | null;
   authMode?: AuthMode;
+  projects?: JiraProject[];
+  selectedProjectKey?: string;
+  onProjectChange?: (key: string, name: string) => void;
 }
 
 const NAV_ITEMS = [
-  { key: "config", icon: <SettingOutlined />, label: "Configuration" },
+  { key: "overview", icon: <BarChartOutlined />, label: "Overview" },
   { key: "health", icon: <DashboardOutlined />, label: "Project Health" },
   { key: "ageing", icon: <ClockCircleOutlined />, label: "Ageing Analysis" },
   { key: "top-stories", icon: <BugOutlined />, label: "Top Stories" },
@@ -40,9 +42,11 @@ const NAV_ITEMS = [
 const QALayout: React.FC<QALayoutProps> = ({
   children,
   onBack,
-  configPanel,
   user,
   authMode,
+  projects = [],
+  selectedProjectKey = "",
+  onProjectChange,
 }) => {
   const {
     activeSection,
@@ -52,14 +56,6 @@ const QALayout: React.FC<QALayoutProps> = ({
   } = useDashboardStore();
   const [filtersOpen, setFiltersOpen] = React.useState(false);
 
-  const content =
-    activeSection === "config"
-      ? (configPanel ?? (
-          <div style={{ color: "var(--qa-text-muted)", padding: 24 }}>
-            No configuration panel provided.
-          </div>
-        ))
-      : children;
   const sectionLabel =
     NAV_ITEMS.find((n) => n.key === activeSection)?.label ?? "Dashboard";
 
@@ -97,7 +93,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   lineHeight: 1.2,
                 }}
               >
-                QA Analytics
+                Insights AI
               </div>
               <div style={{ fontSize: 11, color: "var(--qa-text-muted)" }}>
                 AI-Powered Dashboard
@@ -213,8 +209,35 @@ const QALayout: React.FC<QALayoutProps> = ({
             </span>
           </div>
 
-          {/* Right: theme selector + auth badge + user */}
+          {/* Right: project selector + theme selector + auth badge + user */}
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {/* Project selector */}
+            {projects.length > 0 && onProjectChange && (
+              <select
+                value={selectedProjectKey}
+                onChange={(e) => {
+                  const proj = projects.find((p) => p.key === e.target.value);
+                  if (proj) onProjectChange(proj.key, proj.name);
+                }}
+                style={{
+                  background: "var(--qa-bg-card)",
+                  color: "var(--qa-text-primary)",
+                  border: "1px solid var(--qa-border)",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  minWidth: 170,
+                  maxWidth: 220,
+                }}
+              >
+                {projects.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.name} ({p.key})
+                  </option>
+                ))}
+              </select>
+            )}
             {/* QA Theme selector */}
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 14 }}>🎨</span>
@@ -324,7 +347,7 @@ const QALayout: React.FC<QALayoutProps> = ({
           id="qa-dashboard-content"
           style={{ padding: 24, minHeight: "calc(100vh - 55px)" }}
         >
-          {content}
+          {children}
         </Content>
       </Layout>
 

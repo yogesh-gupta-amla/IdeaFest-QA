@@ -96,7 +96,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   lineHeight: 1.2,
                 }}
               >
-                Insights AI
+                InSights AI
               </div>
               <div style={{ fontSize: 11, color: "var(--qa-text-muted)" }}>
                 AI-Powered Dashboard

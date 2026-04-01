@@ -86,7 +86,7 @@ export default function LandingScreen({
               letterSpacing: "-0.5px",
             }}
           >
-            Insights AI
+            InSights AI
           </h1>
           <p
             style={{

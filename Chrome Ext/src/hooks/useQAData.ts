@@ -30,10 +30,16 @@ export const useQAIssues = () => {
 
 export const useProjectHealth = () => {
   const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
   const issues = useFilteredIssues();
+  const resolvedQA = useMemo(
+    () => mapJiraIssuesToQA(recentlyResolved),
+    [recentlyResolved],
+  );
   const data = useMemo(
-    () => (rawIssues.length ? calculateProjectHealth(issues) : null),
-    [rawIssues.length, issues],
+    () =>
+      rawIssues.length ? calculateProjectHealth(issues, resolvedQA) : null,
+    [rawIssues.length, issues, resolvedQA],
   );
   return { data, isLoading: rawIssues.length === 0, error: null };
 };

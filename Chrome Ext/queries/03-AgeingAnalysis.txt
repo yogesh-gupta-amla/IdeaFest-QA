@@ -15,6 +15,45 @@ Inline changelog is fetched as part of the main FETCH_JIRA call with
 expand=changelog.
 
 --------------------------------------------------------------------------------
+TIME PERIOD FILTER (client-side)
+--------------------------------------------------------------------------------
+The user can filter ageing data by a time period selector at the top:
+
+  Filter         | Date Range Logic
+  ───────────────┼──────────────────────────────────────────────────────
+  All Time       | No date filter — shows all active Critical/Blocker
+  Today          | issue.created >= today 00:00:00 local time
+  This Week      | issue.created >= Monday 00:00:00 of current week
+  This Month     | issue.created >= 1st of current month 00:00:00
+  Quarterly      | issue.created >= 1st day of current quarter (Jan/Apr/Jul/Oct)
+  Semi-Yearly    | issue.created >= Jan 1 or Jul 1 of current year
+  Sprint         | issue.sprint matches selected sprint name
+
+Sprint filter:
+  - Sprint names extracted from rawIssues[].sprint (customfield_10020)
+  - Defaults to active sprint (from store.sprintName)
+  - User can select any sprint from dropdown
+  - Matching: rawIssue.sprint === selectedSprint → get issue keys
+    → filter AgeingItems where item.issue.key is in that set
+
+All filters are applied CLIENT-SIDE on already-fetched rawIssues.
+No additional Jira API calls are made when switching periods.
+
+Equivalent JQL for each period (for reference only — not executed):
+  Today:       project = "<KEY>" AND created >= startOfDay()
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+  This Week:   project = "<KEY>" AND created >= startOfWeek()
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+  This Month:  project = "<KEY>" AND created >= startOfMonth()
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+  Quarterly:   project = "<KEY>" AND created >= "<YYYY-MM-01>"
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+  Semi-Yearly: project = "<KEY>" AND created >= "<YYYY-MM-01>"
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+  Sprint:      project = "<KEY>" AND sprint = "<sprintName>"
+               AND statusCategory != Done AND priority IN (Critical, Blocker)
+
+--------------------------------------------------------------------------------
 ISSUE FILTER APPLIED
 --------------------------------------------------------------------------------
   Only active (non-Resolved, non-Closed) issues with priority IN (Critical, Blocker)
@@ -29,12 +68,14 @@ INPUT DATA FIELDS USED
 --------------------------------------------------------------------------------
   issue.priority          — filter to Critical/Blocker only
   issue.status            — active filter + escalation check
-  issue.created           — hours elapsed calculation
+  issue.created           — hours elapsed calculation + period filter
   issue.module            — risk scoring (Checkout, Payment = +20)
   issue.environment       — risk scoring (Production = +20)
   issue.reopenCount       — risk score += reopenCount * 5  ← from changelog
   issue.statusChanges[]   — stagnation: length <= 1 AND hoursElapsed > 24 → +10
   issue.slaHours          — SLA threshold per priority
+  issue.key               — sprint matching via rawIssue lookup
+  rawIssue.sprint         — sprint name from customfield_10020
 
 --------------------------------------------------------------------------------
 AGEING STATUS THRESHOLDS
@@ -73,4 +114,5 @@ TABLE COLUMNS
 SUMMARY STATS (top cards)
 --------------------------------------------------------------------------------
   FRESH count | AT_RISK count | AGED count | Escalated count
+  (all counts recalculated from filtered items per selected period)
 ================================================================================

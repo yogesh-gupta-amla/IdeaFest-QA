@@ -190,13 +190,7 @@ async function fetchJiraIssues(
       "description",
       "comment",
     ].join(",");
-
-    const params = new URLSearchParams({
-      jql,
-      maxResults: String(maxResults),
-      fields,
-      expand: "changelog",
-    });
+    const fieldsStr = fields;
 
     const headers: Record<string, string> = { Accept: "application/json" };
     if (authToken) headers["Authorization"] = `Basic ${authToken}`;
@@ -204,19 +198,41 @@ async function fetchJiraIssues(
     const fetchOpts: RequestInit = { method: "GET", headers };
     if (!authToken) fetchOpts.credentials = "include";
 
-    const res = await fetch(
-      `${baseUrl}/rest/api/3/search/jql?${params}`,
-      fetchOpts,
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return {
-        success: false,
-        error: `Jira API error (${res.status}): ${text.substring(0, 200)}`,
-      };
+    // Paginate through all results (cap at 2000 to prevent runaway)
+    const PAGE_SIZE = Math.min(maxResults, 100);
+    const CAP = maxResults;
+    let startAt = 0;
+    let totalAvailable = Infinity;
+    const allRawIssues: Record<string, unknown>[] = [];
+
+    while (startAt < totalAvailable && allRawIssues.length < CAP) {
+      const pageParams = new URLSearchParams({
+        jql,
+        maxResults: String(Math.min(PAGE_SIZE, CAP - allRawIssues.length)),
+        fields: fieldsStr,
+        expand: "changelog",
+        startAt: String(startAt),
+      });
+      const res = await fetch(
+        `${baseUrl}/rest/api/3/search/jql?${pageParams}`,
+        fetchOpts,
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        return {
+          success: false,
+          error: `Jira API error (${res.status}): ${text.substring(0, 200)}`,
+        };
+      }
+      const data = await res.json();
+      totalAvailable = data.total ?? 0;
+      const pageIssues = data.issues || [];
+      allRawIssues.push(...pageIssues);
+      if (pageIssues.length === 0) break;
+      startAt += pageIssues.length;
     }
-    const data = await res.json();
-    const issues = (data.issues || []).map((issue: Record<string, unknown>) => {
+
+    const issues = allRawIssues.map((issue: Record<string, unknown>) => {
       const fields = issue.fields as Record<string, unknown>;
       const status = fields.status as Record<string, unknown>;
       const statusCategory = status?.statusCategory as Record<string, unknown>;
@@ -317,7 +333,7 @@ async function fetchJiraIssues(
         assigneeChanges,
       };
     });
-    return { success: true, total: data.total, issues };
+    return { success: true, total: totalAvailable, issues };
   } catch (err: unknown) {
     return {
       success: false,

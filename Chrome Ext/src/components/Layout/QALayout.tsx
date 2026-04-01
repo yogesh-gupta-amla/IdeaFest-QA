@@ -9,7 +9,6 @@ import {
   FireOutlined,
   ApartmentOutlined,
   RobotOutlined,
-  BarChartOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
@@ -29,7 +28,6 @@ interface QALayoutProps {
 }
 
 const NAV_ITEMS = [
-  { key: "overview", icon: <BarChartOutlined />, label: "Overview" },
   { key: "health", icon: <DashboardOutlined />, label: "Project Health" },
   { key: "ageing", icon: <ClockCircleOutlined />, label: "Ageing Analysis" },
   { key: "top-stories", icon: <BugOutlined />, label: "Top Stories" },

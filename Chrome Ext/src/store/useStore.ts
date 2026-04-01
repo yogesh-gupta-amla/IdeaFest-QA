@@ -17,7 +17,9 @@ interface DashboardStore {
   authToken: string | null;
   authMode: AuthMode;
   rawIssues: JiraIssue[];
+  recentlyResolved: JiraIssue[];
   setRawIssues: (issues: JiraIssue[]) => void;
+  setRecentlyResolved: (issues: JiraIssue[]) => void;
   setTheme: (id: string) => void;
   setActiveSection: (section: string) => void;
   setFilters: (filters: Partial<DashboardFilters>) => void;
@@ -54,7 +56,9 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   authToken: null,
   authMode: "none",
   rawIssues: [],
+  recentlyResolved: [],
   setRawIssues: (issues) => set({ rawIssues: issues }),
+  setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
 
   setTheme: (id) => {
     const theme = QA_THEMES.find((t) => t.id === id);

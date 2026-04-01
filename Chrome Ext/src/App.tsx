@@ -212,33 +212,45 @@ export default function App() {
       setShowDashboard(false);
       setMetrics(null);
       useDashboardStore.getState().setRawIssues([]);
+      useDashboardStore.getState().setRecentlyResolved([]);
 
       showLoading(`Fetching all issues for ${projectKey}…`);
 
       const token = authMode === "token" ? authToken : null;
 
-      const [openResult, todayResult, resolvedResult, sprintResult] =
-        await Promise.all([
-          fetchJiraIssues(
-            jiraUrl,
-            `project = "${projectKey}" AND resolution = Unresolved ORDER BY priority ASC, created DESC`,
-            500,
-            token,
-          ),
-          fetchJiraIssues(
-            jiraUrl,
-            `project = "${projectKey}" AND created >= startOfDay() ORDER BY priority ASC`,
-            200,
-            token,
-          ),
-          fetchJiraIssues(
-            jiraUrl,
-            `project = "${projectKey}" AND resolved >= startOfDay() ORDER BY resolved DESC`,
-            200,
-            token,
-          ),
-          fetchActiveSprint(jiraUrl, projectKey, token),
-        ]);
+      const [
+        openResult,
+        todayResult,
+        resolvedResult,
+        recentResolvedResult,
+        sprintResult,
+      ] = await Promise.all([
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND resolution = Unresolved ORDER BY priority ASC, created DESC`,
+          2000,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND created >= startOfDay() ORDER BY priority ASC`,
+          200,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND resolved >= startOfDay() ORDER BY resolved DESC`,
+          200,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND resolved >= -7d ORDER BY resolved DESC`,
+          500,
+          token,
+        ),
+        fetchActiveSprint(jiraUrl, projectKey, token),
+      ]);
 
       hideLoading();
 
@@ -251,6 +263,9 @@ export default function App() {
       const todayCreated = todayResult.success ? todayResult.issues || [] : [];
       const todayResolved = resolvedResult.success
         ? resolvedResult.issues || []
+        : [];
+      const recentlyResolved = recentResolvedResult.success
+        ? recentResolvedResult.issues || []
         : [];
 
       // Load snapshot for trends
@@ -271,11 +286,12 @@ export default function App() {
       const store = useDashboardStore.getState();
       store.setProjectData(projectKey, projectName, m, prevM);
       store.setRawIssues(openIssues);
+      store.setRecentlyResolved(recentlyResolved);
       store.setSprintInfo(
         sprintResult.sprintName || "",
         sprintResult.sprintGoal || "",
       );
-      store.setActiveSection("overview");
+      store.setActiveSection("health");
 
       // Save today's snapshot
       storageSet({

@@ -68,6 +68,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 export const calculateProjectHealth = (
   issues: QAIssue[],
+  recentlyResolved?: QAIssue[],
 ): ProjectHealthResult => {
   const active = issues.filter(isActiveIssue);
   const total = active.length;
@@ -85,10 +86,13 @@ export const calculateProjectHealth = (
   });
   const slaBreachCount = slaBreachedIssues.length;
 
-  const resolvedInLast7d = issues.filter((i) => {
-    if (!i.resolved) return false;
-    return hoursSince(i.resolved) < 168;
-  }).length;
+  // Use recentlyResolved (last 7d) for closure rate if provided
+  const resolvedInLast7d = recentlyResolved
+    ? recentlyResolved.length
+    : issues.filter((i) => {
+        if (!i.resolved) return false;
+        return hoursSince(i.resolved) < 168;
+      }).length;
   const createdInLast7d = issues.filter(
     (i) => hoursSince(i.created) < 168,
   ).length;
@@ -134,7 +138,10 @@ export const calculateProjectHealth = (
     ? `Project health is RED. ${criticalBlockerCount} critical/blocker issues and ${slaBreachCount} SLA breaches require immediate attention.`
     : `Project health is GREEN. Closure rate is ${(closureRate * 100).toFixed(0)}%, with ${total} active issues well-managed.`;
 
-  // Defect trend (last 7 days)
+  // Defect trend (last 7 days) — combine open issues + recently resolved
+  const allIssuesForTrend = recentlyResolved
+    ? [...issues, ...recentlyResolved]
+    : issues;
   const defectTrend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => {
     const day = new Date();
     day.setDate(day.getDate() - (6 - i));
@@ -143,17 +150,19 @@ export const calculateProjectHealth = (
       day: "numeric",
     });
     const dayMs = day.getTime();
-    const nextMs = dayMs + 86400000;
-    const created = issues.filter((iss) => {
+    day.setHours(0, 0, 0, 0);
+    const dayStart = day.getTime();
+    const nextMs = dayStart + 86400000;
+    const created = allIssuesForTrend.filter((iss) => {
       const t = new Date(iss.created).getTime();
-      return t >= dayMs && t < nextMs;
+      return t >= dayStart && t < nextMs;
     }).length;
-    const resolved = issues.filter((iss) => {
+    const resolved = allIssuesForTrend.filter((iss) => {
       if (!iss.resolved) return false;
       const t = new Date(iss.resolved).getTime();
-      return t >= dayMs && t < nextMs;
+      return t >= dayStart && t < nextMs;
     }).length;
-    const open = issues.filter((iss) => {
+    const open = allIssuesForTrend.filter((iss) => {
       return new Date(iss.created).getTime() <= nextMs && isActiveIssue(iss);
     }).length;
     return { date, created, resolved, open };

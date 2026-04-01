@@ -11,7 +11,6 @@ import BugLeakage from "../components/QA/BugLeakage";
 import OverburntItems from "../components/QA/OverburntItems";
 import FlowImpact from "../components/QA/FlowImpact";
 import AIRecommendations from "../components/QA/AIRecommendations";
-import ProjectOverview from "../components/QA/ProjectOverview";
 import JiraExplorer from "../components/QA/JiraExplorer";
 import type { AuthMode, JiraUser } from "../types";
 
@@ -25,7 +24,6 @@ const queryClient = new QueryClient({
 });
 
 const SECTION_MAP: Record<string, React.ReactNode> = {
-  overview: <ProjectOverview />,
   health: <ProjectHealth />,
   ageing: <AgeingAnalysis />,
   "top-stories": <TopStories />,
@@ -72,7 +70,7 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
         selectedProjectKey={selectedProjectKey}
         onProjectChange={onLoadProject}
       >
-        {SECTION_MAP[activeSection] ?? <ProjectOverview />}
+        {SECTION_MAP[activeSection] ?? <ProjectHealth />}
       </QALayout>
     </ConfigProvider>
   );

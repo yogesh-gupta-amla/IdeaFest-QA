@@ -1,0 +1,78 @@
+================================================================================
+TAB: Flow Impact
+================================================================================
+Sidebar icon: ApartmentOutlined
+Component: src/components/QA/FlowImpact.tsx
+Hook: useFlowImpact() → src/hooks/useQAData.ts
+Calculation: calculateFlowImpact() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+Description field is needed for keyword matching in flow impact analysis.
+Fetched via the main FETCH_JIRA call using the `description` field.
+Jira returns ADF (Atlassian Document Format) JSON for description.
+The background.ts ADF extractor converts it to plain text for matching.
+
+--------------------------------------------------------------------------------
+ISSUE FILTER APPLIED
+--------------------------------------------------------------------------------
+  Only ACTIVE issues (status NOT IN [Resolved, Closed])
+
+--------------------------------------------------------------------------------
+FLOW IMPACT DETECTION LOGIC
+--------------------------------------------------------------------------------
+Keywords scanned across: issue.summary + issue.description (plain text)
+
+FUNCTIONAL KEYWORDS (business-critical flows):
+  login, checkout, payment, order, cart, authentication,
+  api, transaction
+
+FAILURE KEYWORDS (severity indicators):
+  failure, fail, broken, error, 500, crash, corrupt,
+  data loss, system
+
+HIGH-RISK DOMAINS (auto-assigned based on keywords):
+  Checkout, Payment, Login
+
+AN ISSUE IS INCLUDED if it matches ANY functional keyword.
+
+--------------------------------------------------------------------------------
+RISK LEVEL CALCULATION
+--------------------------------------------------------------------------------
+Sprint Risk:
+  HIGH    — priority IN (Blocker, Critical)   OR  3+ functional keywords matched
+  MEDIUM  — priority = High                  OR  1–2 functional keywords matched
+  LOW     — otherwise
+
+Release Impact:
+  HIGH    — any failure keyword matched + domain IN [Checkout, Payment, Login]
+  MEDIUM  — any failure keyword matched OR domain = Login
+  LOW     — no failure keywords
+
+Overall Risk:
+  HIGH    — sprintRisk = HIGH OR releaseImpact = HIGH
+  MEDIUM  — sprintRisk = MEDIUM OR releaseImpact = MEDIUM
+  LOW     — otherwise
+  NONE    — no functional keywords at all (issue not included)
+
+INPUT DATA FIELDS USED:
+  issue.summary        — keyword scanning
+  issue.description    — keyword scanning  ← requires description field from API
+  issue.priority       — sprint risk calculation
+  issue.module         — domain assignment
+  issue.status         — active filter
+
+--------------------------------------------------------------------------------
+TABLE COLUMNS
+--------------------------------------------------------------------------------
+  Key | Summary | Domain | Matched Keywords | Sprint Risk | Release Impact | Overall Risk
+  Filter: Sprint Risk (HIGH/MEDIUM/LOW), Release Impact
+  Sort: Overall Risk (HIGH first)
+
+--------------------------------------------------------------------------------
+SUMMARY STATS (top cards)
+--------------------------------------------------------------------------------
+  Total Impacted | HIGH Risk | MEDIUM Risk | LOW Risk
+================================================================================

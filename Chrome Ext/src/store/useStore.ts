@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { DashboardFilters, Priority } from "../types/qa";
-import type { Metrics, SnapshotMetrics, RAGStatus, AuthMode } from "../types";
+import type { Metrics, SnapshotMetrics, AuthMode, JiraIssue } from "../types";
 import { QA_THEMES, applyTheme } from "../themes";
 
 interface DashboardStore {
@@ -11,10 +11,13 @@ interface DashboardStore {
   projectName: string;
   projectMetrics: Metrics | null;
   prevProjectMetrics: SnapshotMetrics | null;
-  ragOverride: RAGStatus;
+  sprintName: string;
+  sprintGoal: string;
   jiraUrl: string;
   authToken: string | null;
   authMode: AuthMode;
+  rawIssues: JiraIssue[];
+  setRawIssues: (issues: JiraIssue[]) => void;
   setTheme: (id: string) => void;
   setActiveSection: (section: string) => void;
   setFilters: (filters: Partial<DashboardFilters>) => void;
@@ -25,7 +28,7 @@ interface DashboardStore {
     metrics: Metrics,
     prev: SnapshotMetrics | null,
   ) => void;
-  setRagOverride: (rag: RAGStatus) => void;
+  setSprintInfo: (sprintName: string, sprintGoal: string) => void;
   setJiraConfig: (url: string, token: string | null, mode: AuthMode) => void;
 }
 
@@ -45,10 +48,13 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   projectName: "",
   projectMetrics: null,
   prevProjectMetrics: null,
-  ragOverride: null,
+  sprintName: "",
+  sprintGoal: "",
   jiraUrl: "",
   authToken: null,
   authMode: "none",
+  rawIssues: [],
+  setRawIssues: (issues) => set({ rawIssues: issues }),
 
   setTheme: (id) => {
     const theme = QA_THEMES.find((t) => t.id === id);
@@ -71,7 +77,7 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
       prevProjectMetrics: prev,
     }),
 
-  setRagOverride: (rag) => set({ ragOverride: rag }),
+  setSprintInfo: (sprintName, sprintGoal) => set({ sprintName, sprintGoal }),
 
   setJiraConfig: (url, token, mode) =>
     set({ jiraUrl: url, authToken: token, authMode: mode }),

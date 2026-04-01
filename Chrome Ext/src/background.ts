@@ -150,6 +150,16 @@ async function fetchActiveSprint(
   }
 }
 
+// Extract plain text from Jira ADF (Atlassian Document Format) description
+function extractAdfText(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  const n = node as Record<string, unknown>;
+  if (n.type === "text" && typeof n.text === "string") return n.text;
+  if (Array.isArray(n.content))
+    return (n.content as unknown[]).map(extractAdfText).join(" ");
+  return "";
+}
+
 async function fetchJiraIssues(
   baseUrl: string,
   jql: string,
@@ -157,15 +167,46 @@ async function fetchJiraIssues(
   authToken: string | null,
 ) {
   try {
+    const fields = [
+      "summary",
+      "status",
+      "updated",
+      "created",
+      "priority",
+      "assignee",
+      "issuetype",
+      "project",
+      "resolution",
+      "labels",
+      "components",
+      "reporter",
+      "timeoriginalestimate",
+      "aggregatetimespent",
+      "resolutiondate",
+      "parent",
+      "customfield_10016",
+      "customfield_10020",
+      "duedate",
+      "description",
+      "comment",
+    ].join(",");
+
     const params = new URLSearchParams({
       jql,
       maxResults: String(maxResults),
-      fields:
-        "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components",
+      fields,
+      expand: "changelog",
     });
+
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (authToken) headers["Authorization"] = `Basic ${authToken}`;
+
+    const fetchOpts: RequestInit = { method: "GET", headers };
+    if (!authToken) fetchOpts.credentials = "include";
+
     const res = await fetch(
-      `${baseUrl}/rest/api/3/search/jql?${params.toString()}`,
-      buildFetchOptions(authToken),
+      `${baseUrl}/rest/api/3/search/jql?${params}`,
+      fetchOpts,
     );
     if (!res.ok) {
       const text = await res.text();
@@ -179,25 +220,101 @@ async function fetchJiraIssues(
       const fields = issue.fields as Record<string, unknown>;
       const status = fields.status as Record<string, unknown>;
       const statusCategory = status?.statusCategory as Record<string, unknown>;
+      const parentField = fields.parent as Record<string, unknown> | null;
+      const parentFields = parentField?.fields as
+        | Record<string, unknown>
+        | undefined;
+
+      // ── Parse changelog ──────────────────────────────────────────────────
+      const changelog = issue.changelog as Record<string, unknown> | undefined;
+      const histories =
+        (changelog?.histories as Record<string, unknown>[]) || [];
+      const statusChanges: {
+        from: string;
+        to: string;
+        date: string;
+        by: string;
+      }[] = [];
+      let reopenCount = 0;
+      let assigneeChanges = 0;
+
+      for (const history of histories) {
+        const items = (history.items as Record<string, unknown>[]) || [];
+        const author =
+          ((history.author as Record<string, unknown>)
+            ?.displayName as string) || "";
+        const created = (history.created as string) || "";
+        for (const item of items) {
+          if (item.field === "status") {
+            const toStr = (item["toString"] as string) || "";
+            statusChanges.push({
+              from: (item["fromString"] as string) || "",
+              to: toStr,
+              date: created,
+              by: author,
+            });
+            if (toStr.toLowerCase().includes("reopen")) reopenCount++;
+          }
+          if (item.field === "assignee") assigneeChanges++;
+        }
+      }
+
       return {
         key: issue.key,
         summary: fields.summary,
-        status: status?.name || "Unknown",
-        statusCategory: statusCategory?.name || "Unknown",
+        status: (status?.name as string) || "Unknown",
+        statusCategory: (statusCategory?.name as string) || "Unknown",
         updated: fields.updated,
-        created: fields.created || "",
-        priority: (fields.priority as Record<string, unknown>)?.name || "",
-        issueType: (fields.issuetype as Record<string, unknown>)?.name || "",
-        project: (fields.project as Record<string, unknown>)?.name || "",
-        projectKey: (fields.project as Record<string, unknown>)?.key || "",
-        resolution: (fields.resolution as Record<string, unknown>)?.name || "",
-        labels: fields.labels || [],
+        created: (fields.created as string) || "",
+        priority:
+          ((fields.priority as Record<string, unknown>)?.name as string) || "",
+        issueType:
+          ((fields.issuetype as Record<string, unknown>)?.name as string) || "",
+        project:
+          ((fields.project as Record<string, unknown>)?.name as string) || "",
+        projectKey:
+          ((fields.project as Record<string, unknown>)?.key as string) || "",
+        resolution:
+          ((fields.resolution as Record<string, unknown>)?.name as string) ||
+          "",
+        labels: (fields.labels as string[]) || [],
         assignee:
-          (fields.assignee as Record<string, unknown>)?.displayName ||
-          "Unassigned",
+          ((fields.assignee as Record<string, unknown>)
+            ?.displayName as string) || "Unassigned",
         components: (
           (fields.components as Record<string, unknown>[]) || []
-        ).map((c) => c.name),
+        ).map((c) => c.name as string),
+        reporter:
+          ((fields.reporter as Record<string, unknown>)
+            ?.displayName as string) || "",
+        timeEstimate:
+          typeof fields.timeoriginalestimate === "number"
+            ? Math.round(fields.timeoriginalestimate / 3600)
+            : 0,
+        timeSpent:
+          typeof fields.aggregatetimespent === "number"
+            ? Math.round(fields.aggregatetimespent / 3600)
+            : 0,
+        resolved: (fields.resolutiondate as string) || null,
+        storyPoints: (fields.customfield_10016 as number) || null,
+        epic: (parentField?.key as string) || null,
+        epicName: (parentFields?.summary as string) || null,
+        sprint: (() => {
+          const sf = fields.customfield_10020;
+          if (Array.isArray(sf) && sf.length > 0)
+            return (
+              ((sf[sf.length - 1] as Record<string, unknown>)
+                ?.name as string) || ""
+            );
+          return "";
+        })(),
+        dueDate: (fields.duedate as string) || null,
+        description: extractAdfText(fields.description),
+        commentsCount:
+          ((fields.comment as Record<string, unknown>)?.total as number) ?? 0,
+        statusChanges,
+        reopenCount,
+        assigneeChanges,
       };
     });
     return { success: true, total: data.total, issues };

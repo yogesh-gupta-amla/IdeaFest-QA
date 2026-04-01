@@ -6,6 +6,7 @@ import {
   validateAuth,
   fetchProjects,
   fetchJiraIssues,
+  fetchActiveSprint,
 } from "./services/jiraService";
 import { computeMetrics } from "./services/metricsService";
 import type {
@@ -15,7 +16,6 @@ import type {
   Metrics,
   ManualEntry,
   QANote,
-  RAGStatus,
   SnapshotMetrics,
   Theme,
 } from "./types";
@@ -53,9 +53,6 @@ export default function App() {
   const [prevMetrics, setPrevMetrics] = useState<SnapshotMetrics | null>(null);
   const [manualEntries, setManualEntries] = useState<ManualEntry[]>([]);
   const [qaNotes, setQaNotes] = useState<QANote[]>([]);
-  const [testingEnv] = useState("NP");
-  const [sprintName] = useState("");
-  const [ragOverride, setRagOverride] = useState<RAGStatus>(null);
   const [dsrRecipient, setDsrRecipient] = useState("");
   const [showDashboard, setShowDashboard] = useState(false);
   const [showQADashboard, setShowQADashboard] = useState(false);
@@ -133,7 +130,6 @@ export default function App() {
         "manualEntries",
         "qaNotes",
         "dsrRecipient",
-        "ragOverride",
         "lastProjectKey",
         "lastProjectName",
       ]);
@@ -141,8 +137,6 @@ export default function App() {
         setManualEntries(saved.manualEntries as ManualEntry[]);
       if (saved.qaNotes) setQaNotes(saved.qaNotes as QANote[]);
       if (saved.dsrRecipient) setDsrRecipient(saved.dsrRecipient as string);
-      if (saved.ragOverride !== undefined)
-        setRagOverride((saved.ragOverride as RAGStatus) || null);
       if (saved.lastProjectKey && saved.lastProjectName) {
         setPendingProject({
           key: saved.lastProjectKey as string,
@@ -217,31 +211,34 @@ export default function App() {
       setSelectedProjectName(projectName);
       setShowDashboard(false);
       setMetrics(null);
+      useDashboardStore.getState().setRawIssues([]);
 
       showLoading(`Fetching all issues for ${projectKey}…`);
 
       const token = authMode === "token" ? authToken : null;
 
-      const [openResult, todayResult, resolvedResult] = await Promise.all([
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND resolution = Unresolved ORDER BY priority ASC, created DESC`,
-          500,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND created >= startOfDay() ORDER BY priority ASC`,
-          200,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND resolved >= startOfDay() ORDER BY resolved DESC`,
-          200,
-          token,
-        ),
-      ]);
+      const [openResult, todayResult, resolvedResult, sprintResult] =
+        await Promise.all([
+          fetchJiraIssues(
+            jiraUrl,
+            `project = "${projectKey}" AND resolution = Unresolved ORDER BY priority ASC, created DESC`,
+            500,
+            token,
+          ),
+          fetchJiraIssues(
+            jiraUrl,
+            `project = "${projectKey}" AND created >= startOfDay() ORDER BY priority ASC`,
+            200,
+            token,
+          ),
+          fetchJiraIssues(
+            jiraUrl,
+            `project = "${projectKey}" AND resolved >= startOfDay() ORDER BY resolved DESC`,
+            200,
+            token,
+          ),
+          fetchActiveSprint(jiraUrl, projectKey, token),
+        ]);
 
       hideLoading();
 
@@ -273,6 +270,11 @@ export default function App() {
       // Store metrics in QA dashboard store and navigate to overview tab
       const store = useDashboardStore.getState();
       store.setProjectData(projectKey, projectName, m, prevM);
+      store.setRawIssues(openIssues);
+      store.setSprintInfo(
+        sprintResult.sprintName || "",
+        sprintResult.sprintGoal || "",
+      );
       store.setActiveSection("overview");
 
       // Save today's snapshot
@@ -318,11 +320,6 @@ export default function App() {
   const handleQaNotesChange = useCallback((notes: QANote[]) => {
     setQaNotes(notes);
     storageSet({ qaNotes: notes as unknown as Record<string, unknown>[] });
-  }, []);
-
-  const handleRagOverride = useCallback((rag: RAGStatus) => {
-    setRagOverride(rag);
-    storageSet({ ragOverride: rag as unknown as Record<string, unknown> });
   }, []);
 
   const handleDsrRecipientChange = useCallback((r: string) => {

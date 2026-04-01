@@ -1,0 +1,76 @@
+================================================================================
+TAB: Ageing Analysis
+================================================================================
+Sidebar icon: ClockCircleOutlined
+Component: src/components/QA/AgeingAnalysis.tsx
+Hook: useAgeingAnalysis() → src/hooks/useQAData.ts
+Calculation: calculateAgeingItems() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+Changelog data is used for stagnation detection (statusChanges.length).
+Inline changelog is fetched as part of the main FETCH_JIRA call with
+expand=changelog.
+
+--------------------------------------------------------------------------------
+ISSUE FILTER APPLIED
+--------------------------------------------------------------------------------
+  Only active (non-Resolved, non-Closed) issues with priority IN (Critical, Blocker)
+
+JQL equivalent:
+  project = "<KEY>" AND statusCategory != Done
+  AND priority IN (Critical, Blocker)
+  ORDER BY created ASC
+
+--------------------------------------------------------------------------------
+INPUT DATA FIELDS USED
+--------------------------------------------------------------------------------
+  issue.priority          — filter to Critical/Blocker only
+  issue.status            — active filter + escalation check
+  issue.created           — hours elapsed calculation
+  issue.module            — risk scoring (Checkout, Payment = +20)
+  issue.environment       — risk scoring (Production = +20)
+  issue.reopenCount       — risk score += reopenCount * 5  ← from changelog
+  issue.statusChanges[]   — stagnation: length <= 1 AND hoursElapsed > 24 → +10
+  issue.slaHours          — SLA threshold per priority
+
+--------------------------------------------------------------------------------
+AGEING STATUS THRESHOLDS
+--------------------------------------------------------------------------------
+  FRESH    — hoursElapsed < 60% of slaHours
+  AT_RISK  — hoursElapsed 60%–100% of slaHours
+  AGED     — hoursElapsed > slaHours
+
+  Override: if hoursElapsed > 48h AND status = "Open" → escalated = true
+            (forces AT_RISK minimum even if within SLA)
+
+SLA HOURS BY PRIORITY:
+  Blocker  → 4h
+  Critical → 24h
+  High     → 48h
+  Medium   → 72h
+  Low      → 168h
+
+--------------------------------------------------------------------------------
+RISK SCORE FORMULA
+--------------------------------------------------------------------------------
+  base         = (hoursElapsed / slaHours) * 50
+  +20          if module IN [Checkout, Payment]
+  +20          if environment = Production
+  +5 per reopen if reopenCount > 0
+  +10          if statusChanges.length <= 1 AND hoursElapsed > 24 (stagnant)
+  capped at 100
+
+--------------------------------------------------------------------------------
+TABLE COLUMNS
+--------------------------------------------------------------------------------
+  Key | Summary | Priority | Module | Hours Elapsed | SLA (h) | Status | Risk Score
+  Sorted by: riskScore DESC
+
+--------------------------------------------------------------------------------
+SUMMARY STATS (top cards)
+--------------------------------------------------------------------------------
+  FRESH count | AT_RISK count | AGED count | Escalated count
+================================================================================

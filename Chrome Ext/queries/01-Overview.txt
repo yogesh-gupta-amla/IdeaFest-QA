@@ -1,0 +1,74 @@
+================================================================================
+TAB: Overview (Project Overview)
+================================================================================
+Sidebar icon: BarChartOutlined
+Component: src/components/QA/ProjectOverview.tsx
+Data source: Zustand store (projectMetrics, prevProjectMetrics, sprintName, sprintGoal)
+Populated by: App.tsx → handleLoadProject()
+
+--------------------------------------------------------------------------------
+QUERY 1 — Open Issues Count (total open, priority map, status map, type map)
+--------------------------------------------------------------------------------
+Endpoint : GET /rest/api/3/search/jql  (FETCH_JIRA message)
+JQL      : project = "<KEY>" AND statusCategory != Done ORDER BY created DESC
+maxResults: 200
+Fields   : summary, status, updated, created, priority, assignee, issuetype,
+           project, resolution, labels, components, reporter,
+           timeoriginalestimate, aggregatetimespent, resolutiondate,
+           parent, customfield_10016 (story points),
+           customfield_10020 (sprint), duedate, description, comment
+Expand   : changelog
+Purpose  : Base dataset for all metrics shown in StatsGrid + HealthBanner
+
+DERIVED METRICS (computed by metricsService.ts → computeMetrics):
+  • totalOpen       — count of all returned issues
+  • mustFix         — issues where priority IN (Blocker, Critical)
+  • blocked         — issues where status = "Blocked" or label contains "blocked"
+  • statusMap       — { [statusName]: count }
+  • priorityMap     — { [priorityName]: count }
+  • typeMap         — { [issueTypeName]: count }
+  • bugCount        — issues where issueType = "Bug"
+
+--------------------------------------------------------------------------------
+QUERY 2 — Today's New Issues
+--------------------------------------------------------------------------------
+Endpoint : GET /rest/api/3/search/jql  (FETCH_JIRA message)
+JQL      : project = "<KEY>" AND created >= startOfDay() ORDER BY created DESC
+maxResults: 50
+Fields   : same as Query 1
+Purpose  : todayNew count + todayPriorityMap in StatsGrid
+
+--------------------------------------------------------------------------------
+QUERY 3 — Today's Resolved Issues
+--------------------------------------------------------------------------------
+Endpoint : GET /rest/api/3/search/jql  (FETCH_JIRA message)
+JQL      : project = "<KEY>" AND resolutiondate >= startOfDay() ORDER BY updated DESC
+maxResults: 50
+Fields   : same as Query 1
+Purpose  : todayResolved count in StatsGrid
+
+--------------------------------------------------------------------------------
+QUERY 4 — Active Sprint Info
+--------------------------------------------------------------------------------
+Step 4a  GET /rest/agile/1.0/board?projectKeyOrId=<KEY>&type=scrum&maxResults=1
+Step 4b  GET /rest/agile/1.0/board/<boardId>/sprint?state=active&maxResults=1
+Purpose  : sprintName + sprintGoal shown in HealthBanner
+
+--------------------------------------------------------------------------------
+DISPLAYED METRICS (StatsGrid)
+--------------------------------------------------------------------------------
+  • Total Open      — from QUERY 1
+  • Today New       — from QUERY 2 count
+  • Today Resolved  — from QUERY 3 count
+  • Must Fix        — issues with priority Blocker or Critical (QUERY 1)
+  • Blocked         — issues with status "Blocked" (QUERY 1)
+  • Bug Count       — issueType = Bug (QUERY 1)
+
+--------------------------------------------------------------------------------
+HEALTH BANNER (HealthBanner.tsx)
+--------------------------------------------------------------------------------
+  • RAG status      — AUTO calculated from: criticalBlockerRatio, SLA breaches,
+                      reopen rate, closure rate (all from QUERY 1 data)
+  • Sprint name     — QUERY 4
+  • Sprint goal     — QUERY 4
+================================================================================

@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
-import { MOCK_ISSUES } from "../data/mockData";
+import { useMemo } from "react";
 import { useDashboardStore } from "../store/useStore";
 import { filterIssues } from "../utils/qaCalculations";
+import { mapJiraIssuesToQA } from "../utils/jiraToQA";
 import {
   calculateProjectHealth,
   calculateAgeingItems,
@@ -12,103 +12,90 @@ import {
   generateAIRecommendations,
 } from "../utils/qaCalculations";
 
-const STALE_TIME = 5 * 60 * 1000; // 5 minutes
-
-// Simulate async fetch with mock data
-const fetchIssues = async () => {
-  await new Promise((r) => setTimeout(r, 400)); // Simulate network delay
-  return MOCK_ISSUES;
+// Derive filtered QAIssue[] from live Jira data in the store
+const useFilteredIssues = () => {
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const filters = useDashboardStore((s) => s.filters);
+  return useMemo(
+    () => filterIssues(mapJiraIssuesToQA(rawIssues), filters),
+    [rawIssues, filters],
+  );
 };
 
 export const useQAIssues = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["qa-issues", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => filterIssues(data, filters),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  return { data: issues, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useProjectHealth = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["project-health", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateProjectHealth(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateProjectHealth(issues) : null),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useAgeingAnalysis = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["ageing", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateAgeingItems(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateAgeingItems(issues) : []),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useTopStories = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["top-stories", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateTopStories(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateTopStories(issues) : []),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useBugLeakage = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["bug-leakage", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateBugLeakage(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateBugLeakage(issues) : []),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useOverburntItems = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["overburnt", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateOverburntItems(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateOverburntItems(issues) : []),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useFlowImpact = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["flow-impact", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => calculateFlowImpact(filterIssues(data, filters)),
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(
+    () => (rawIssues.length ? calculateFlowImpact(issues) : []),
+    [rawIssues.length, issues],
+  );
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };
 
 export const useAIRecommendations = () => {
-  const filters = useDashboardStore((s) => s.filters);
-
-  return useQuery({
-    queryKey: ["ai-recommendations", filters],
-    queryFn: fetchIssues,
-    staleTime: STALE_TIME,
-    select: (data) => {
-      const filtered = filterIssues(data, filters);
-      const topStories = calculateTopStories(filtered);
-      const ageingItems = calculateAgeingItems(filtered);
-      return generateAIRecommendations(filtered, topStories, ageingItems);
-    },
-  });
+  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const issues = useFilteredIssues();
+  const data = useMemo(() => {
+    if (!rawIssues.length) return [];
+    const topStories = calculateTopStories(issues);
+    const ageingItems = calculateAgeingItems(issues);
+    return generateAIRecommendations(issues, topStories, ageingItems);
+  }, [rawIssues.length, issues]);
+  return { data, isLoading: rawIssues.length === 0, error: null };
 };

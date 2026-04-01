@@ -9,13 +9,11 @@ import {
   FireOutlined,
   ApartmentOutlined,
   RobotOutlined,
-  FilterOutlined,
   BarChartOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
 import { QA_THEMES } from "../../themes";
-import QAFilters from "./QAFilters";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
 
 const { Sider, Content } = Layout;
@@ -57,7 +55,6 @@ const QALayout: React.FC<QALayoutProps> = ({
     themeId,
     setTheme: setDashboardTheme,
   } = useDashboardStore();
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
 
   const sectionLabel =
     NAV_ITEMS.find((n) => n.key === activeSection)?.label ?? "Dashboard";
@@ -127,51 +124,6 @@ const QALayout: React.FC<QALayoutProps> = ({
             },
           }))}
         />
-
-        {/* Bottom: Filters + DSR View */}
-        <div
-          style={{
-            padding: 12,
-            borderTop: "1px solid var(--qa-border)",
-          }}
-        >
-          <button
-            onClick={() => setFiltersOpen(true)}
-            style={{
-              width: "100%",
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              color: "var(--qa-text-secondary)",
-              padding: "6px 12px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontSize: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <FilterOutlined /> Filters
-          </button>
-          {onBack && (
-            <button
-              onClick={onBack}
-              style={{
-                width: "100%",
-                marginTop: 8,
-                background: "transparent",
-                border: "1px solid var(--qa-border)",
-                color: "var(--qa-text-secondary)",
-                fontSize: 11,
-                padding: "5px 10px",
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
-            >
-              ← DSR View
-            </button>
-          )}
-        </div>
       </Sider>
 
       {/* Main content */}
@@ -353,9 +305,6 @@ const QALayout: React.FC<QALayoutProps> = ({
           {children}
         </Content>
       </Layout>
-
-      {/* Filters drawer */}
-      <QAFilters open={filtersOpen} onClose={() => setFiltersOpen(false)} />
     </Layout>
   );
 };

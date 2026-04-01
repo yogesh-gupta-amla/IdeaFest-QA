@@ -1,0 +1,69 @@
+================================================================================
+TAB: Bug Leakage
+================================================================================
+Sidebar icon: BugOutlined
+Component: src/components/QA/BugLeakage.tsx
+Hook: useBugLeakage() → src/hooks/useQAData.ts
+Calculation: calculateBugLeakage() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+LEAKAGE DETECTION LOGIC
+--------------------------------------------------------------------------------
+An issue counts as a "leakage" if it was found in a higher environment than
+where it should have been caught. Detection is based on:
+  1. issue.environment field (derived from labels + summary text)
+  2. keyword matching in labels[] + summary
+
+ENVIRONMENT KEYWORDS:
+  Production  — labels/summary contains: prod, production
+  Staging     — labels/summary contains: stage, staging
+  NPR         — labels/summary contains: npr
+  Non-Prod    — labels/summary contains: np, non-prod, nonprod
+
+ENVIRONMENT DETECTION REGEX (in jiraToQA.ts):
+  Production  → /\bprod(uction)?\b/
+  Staging     → /\bstag(ing)?\b/
+  NPR         → /\bnpr\b/
+  Non-Prod    → /\b(np|non.?prod|nonprod)\b/
+  Default     → Non-Prod
+
+LEAKAGE TYPES:
+  "Production Leakage"  — detected in Production (highest severity)
+  "Stage Leakage"       — detected in Staging
+  "NPR Leakage"         — detected in NPR
+  "Non-Prod Leakage"    — detected in Non-Prod
+
+INPUT DATA FIELDS USED:
+  issue.environment    — primary environment signal
+  issue.labels[]       — keyword scan for environment tokens
+  issue.summary        — keyword scan for environment tokens
+  issue.priority       — shown in table
+  issue.assignee       — shown in table
+  issue.module         — shown in table (component-derived)
+  issue.created        — shown in table
+
+--------------------------------------------------------------------------------
+TABLE COLUMNS
+--------------------------------------------------------------------------------
+  Key | Summary | Priority | Environment | Leakage Type | Module | Assignee | Created
+  Sorted by: environments order (Production → Staging → NPR → Non-Prod)
+  Filter: environment column (filterable in table)
+
+--------------------------------------------------------------------------------
+SUMMARY STATS (top cards)
+--------------------------------------------------------------------------------
+  Total Leakages | Production | Staging | NPR | Non-Prod
+  (each count from the leakage items array grouped by detectedIn)
+
+--------------------------------------------------------------------------------
+TO IMPROVE DETECTION ACCURACY
+--------------------------------------------------------------------------------
+Ensure Jira issues have labels set correctly, e.g.:
+  production-bug, staging-bug, npr-bug, nonprod-bug
+Or include environment name in the issue summary.
+================================================================================

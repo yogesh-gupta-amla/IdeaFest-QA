@@ -13,6 +13,21 @@ export interface JiraIssue {
   labels: string[];
   assignee: string;
   components: string[];
+  reporter?: string;
+  timeEstimate?: number;
+  timeSpent?: number;
+  resolved?: string | null;
+  storyPoints?: number | null;
+  epic?: string | null;
+  epicName?: string | null;
+  sprint?: string;
+  dueDate?: string | null;
+  // Live fields from changelog + comment (fetched via expand=changelog)
+  description?: string;
+  commentsCount?: number;
+  statusChanges?: Array<{ from: string; to: string; date: string; by: string }>;
+  reopenCount?: number;
+  assigneeChanges?: number;
 }
 
 export interface JiraUser {

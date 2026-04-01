@@ -1,0 +1,60 @@
+================================================================================
+TAB: Top Stories
+================================================================================
+Sidebar icon: TrophyOutlined
+Component: src/components/QA/TopStories.tsx
+Hook: useTopStories() → src/hooks/useQAData.ts
+Calculation: calculateTopStories() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+Story grouping relies on the parent field fetched in the main FETCH_JIRA call.
+
+REQUIRED LIVE API FIELDS:
+  parent          → issue.epic (parent issue KEY, e.g. "GSW-123")
+  parent.fields.summary → issue.epicName (parent issue TITLE)
+  These are fetched inline in the main search response — the parent field in
+  Jira returns: { id, key, self, fields: { summary, status, ... } }
+
+--------------------------------------------------------------------------------
+GROUPING LOGIC
+--------------------------------------------------------------------------------
+Issues are grouped by storyKey (= parent issue key, i.e. issue.epic).
+An issue is included in a story group if:
+  issue.storyKey is not null/undefined
+
+For each group:
+  storyKey    — parent issue key (from fields.parent.key)
+  storyTitle  — parent issue summary (from fields.parent.fields.summary)
+  bugCount    — total issues linked to this parent
+  criticalCount — count where priority IN (Blocker, Critical)
+  highCount   — count where priority = High
+  bugs[]      — all QAIssue objects in this group
+
+Top 3 stories by bugCount are displayed.
+
+INPUT DATA FIELDS USED:
+  issue.storyKey    — parent KEY for grouping  ← from fields.parent.key
+  issue.storyTitle  — parent TITLE for display ← from fields.parent.fields.summary
+  issue.priority    — critical/high counting
+  issue.status      — shown in bug sub-table
+  issue.assignee    — shown in bug sub-table
+
+--------------------------------------------------------------------------------
+DISPLAY
+--------------------------------------------------------------------------------
+  Top 3 stories shown as expandable cards
+  Each card: storyKey tag, bugCount badge, storyTitle, criticalCount, highCount
+  Expand → shows bug sub-table with Key, Summary, Priority, Status, Assignee
+  Bar chart → storyKey vs bugs/critical/high counts
+
+--------------------------------------------------------------------------------
+TO ENSURE DATA SHOWS
+--------------------------------------------------------------------------------
+Jira issues must have a parent issue (Story/Epic) set.
+If bugs are children of Stories: parent field will contain the Story.
+If bugs are children of Epics directly: parent field will contain the Epic.
+Either way, grouping works via the parent.key field.
+================================================================================

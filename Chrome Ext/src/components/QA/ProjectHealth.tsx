@@ -14,6 +14,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useProjectHealth } from "../../hooks/useQAData";
+import { useDashboardStore } from "../../store/useStore";
+import { calculateHealth } from "../../services/metricsService";
 import GaugeChart from "../Charts/GaugeChart";
 import ChartCard from "../Charts/ChartCard";
 import { exportDashboardToPDF } from "../../utils/exportUtils";
@@ -32,8 +34,26 @@ const SEVERITY_COLORS: Record<string, string> = {
   Low: "#52c41a",
 };
 
+const HEALTH_COLORS: Record<string, string> = {
+  green: "#52c41a",
+  yellow: "#faad14",
+  red: "#ff4d4f",
+};
+
+const HEALTH_LABELS: Record<string, string> = {
+  green: "🟢 GREEN — Healthy",
+  yellow: "🟡 YELLOW — At Risk",
+  red: "🔴 RED — Critical",
+};
+
 const ProjectHealth: React.FC = () => {
   const { data: health, isLoading, error } = useProjectHealth();
+  const projectMetrics = useDashboardStore((s) => s.projectMetrics);
+
+  // Use the same health logic as the Overview tab
+  const overviewHealth = projectMetrics
+    ? calculateHealth(projectMetrics)
+    : null;
 
   if (isLoading)
     return (
@@ -51,15 +71,17 @@ const ProjectHealth: React.FC = () => {
   if (error || !health)
     return <Alert type="error" message="Failed to load health data" />;
 
-  const isRed = health.status === "RED";
-  const statusColor = isRed ? "#ff4d4f" : "#52c41a";
+  const healthLevel =
+    overviewHealth?.health ?? (health.status === "RED" ? "red" : "green");
+  const statusColor = HEALTH_COLORS[healthLevel] ?? "#52c41a";
+  const isRed = healthLevel === "red";
 
   return (
     <div>
       {/* Status Banner */}
       <div
         style={{
-          background: isRed ? "rgba(255,77,79,0.12)" : "rgba(82,196,26,0.12)",
+          background: `${statusColor}18`,
           border: `1px solid ${statusColor}`,
           borderRadius: 12,
           padding: "16px 24px",
@@ -93,17 +115,53 @@ const ProjectHealth: React.FC = () => {
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 20, color: statusColor }}>
-              {isRed ? "🔴 RED — Action Required" : "🟢 GREEN — Healthy"}
+              {HEALTH_LABELS[healthLevel]}
             </div>
-            <div
-              style={{
-                color: "var(--qa-text-secondary)",
-                fontSize: 13,
-                maxWidth: 600,
-              }}
-            >
-              {health.summary}
-            </div>
+            {overviewHealth ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 6,
+                }}
+              >
+                {overviewHealth.reasons.map((r, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      background:
+                        r.type === "danger"
+                          ? "rgba(255,77,79,0.15)"
+                          : r.type === "warning"
+                            ? "rgba(250,173,20,0.15)"
+                            : "rgba(82,196,26,0.15)",
+                      color:
+                        r.type === "danger"
+                          ? "#ff4d4f"
+                          : r.type === "warning"
+                            ? "#faad14"
+                            : "#52c41a",
+                    }}
+                  >
+                    {r.text}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  color: "var(--qa-text-secondary)",
+                  fontSize: 13,
+                  maxWidth: 600,
+                }}
+              >
+                {health.summary}
+              </div>
+            )}
           </div>
         </div>
         <Button
@@ -298,10 +356,12 @@ const ProjectHealth: React.FC = () => {
               style={{ borderColor: "var(--qa-border)", padding: "8px 0" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span
-                  style={{ color: isRed ? "#ff4d4f" : "#52c41a", fontSize: 16 }}
-                >
-                  {isRed ? "⚠️" : "✅"}
+                <span style={{ color: statusColor, fontSize: 16 }}>
+                  {healthLevel === "green"
+                    ? "✅"
+                    : healthLevel === "yellow"
+                      ? "⚠️"
+                      : "🔴"}
                 </span>
                 <span
                   style={{ color: "var(--qa-text-secondary)", fontSize: 13 }}

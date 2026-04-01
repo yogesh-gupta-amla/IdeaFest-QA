@@ -1,0 +1,63 @@
+================================================================================
+TAB: Project Health
+================================================================================
+Sidebar icon: HeartOutlined
+Component: src/components/QA/ProjectHealth.tsx
+Hook: useProjectHealth() → src/hooks/useQAData.ts
+Calculation: calculateProjectHealth() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store (populated by Overview QUERY 1)
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+All data is derived from the 200-issue open-issues fetch done at project load.
+Changelog data (statusChanges, reopenCount, assigneeChanges) is fetched inline
+via expand=changelog in the main FETCH_JIRA call.
+
+--------------------------------------------------------------------------------
+INPUT DATA FIELDS USED
+--------------------------------------------------------------------------------
+  issue.priority          — Blocker/Critical detection
+  issue.status            — Resolved/Closed/Reopened detection
+  issue.created           — SLA elapsed time calculation
+  issue.resolved          — closure rate (resolvedInLast7d)
+  issue.reopenCount       — reopen rate metric  ← from changelog
+  issue.statusChanges     — stagnation detection ← from changelog
+  issue.slaHours          — per-priority SLA threshold (Blocker=4h, Critical=24h,
+                            High=48h, Medium=72h, Low=168h)
+
+--------------------------------------------------------------------------------
+DERIVED METRICS
+--------------------------------------------------------------------------------
+  score               — 0–100 health score
+  status              — RED | GREEN
+  criticalBlockerCount — count of priority = Critical | Blocker (active only)
+  highSeverityCount    — count of priority = High (active only)
+  slaBreachCount       — count where hoursElapsed > slaHours
+  reopenedCount        — count where reopenCount > 0 OR status = Reopened
+  closureRate          — resolvedLast7d / createdLast7d
+  creationRate         — issues created in last 7 days
+
+  keyDrivers[]         — human-readable RED trigger reasons
+
+  defectTrend[7]       — per-day { date, created, resolved, open } for last 7 days
+                         → computed by bucketing all issues by created/resolved dates
+
+  severityDistribution — [{ name, value, color }] for Blocker/Critical/High/Medium/Low
+
+--------------------------------------------------------------------------------
+CHART DATA
+--------------------------------------------------------------------------------
+  Line chart    — defectTrend: Created vs Resolved over 7 days
+  Pie chart     — severityDistribution: breakdown by priority
+  Gauge chart   — health score (0–100)
+  Statistic cards — criticalBlocker, highSeverity, slaBreaches, reopened
+
+--------------------------------------------------------------------------------
+RED CONDITIONS (auto-calculated, no hardcoding)
+--------------------------------------------------------------------------------
+  criticalBlockerRatio > 0.05     (more than 5% of issues are Critical/Blocker)
+  slaBreachCount > 0              (any SLA breach)
+  reopenedRatio > 0.15            (more than 15% of issues reopened)
+  closureRate < 0.8               (closure rate below 80% of creation rate)
+================================================================================

@@ -24,7 +24,6 @@ interface DashboardProps {
   selectedProjectName: string;
   manualEntries: ManualEntry[];
   qaNotes: QANote[];
-  testingEnv: string;
   sprintName: string;
   ragOverride: RAGStatus;
   dsrRecipient: string;
@@ -41,9 +40,7 @@ export default function Dashboard({
   selectedProjectName,
   manualEntries,
   qaNotes,
-  testingEnv,
   sprintName,
-  ragOverride,
   dsrRecipient,
   onManualEntriesChange,
   onQaNotesChange,
@@ -55,10 +52,7 @@ export default function Dashboard({
       <HealthBanner
         metrics={metrics}
         selectedProjectName={selectedProjectName}
-        testingEnv={testingEnv}
         sprintName={sprintName}
-        ragOverride={ragOverride}
-        onRagOverrideChange={onRagOverrideChange}
       />
       <HighlightsList
         metrics={metrics}
@@ -81,9 +75,9 @@ export default function Dashboard({
         selectedProjectName={selectedProjectName}
         manualEntries={manualEntries}
         qaNotes={qaNotes}
-        testingEnv={testingEnv}
+        testingEnv=""
         sprintName={sprintName}
-        ragOverride={ragOverride}
+        ragOverride={null}
         dsrRecipient={dsrRecipient}
         onDsrRecipientChange={onDsrRecipientChange}
       />

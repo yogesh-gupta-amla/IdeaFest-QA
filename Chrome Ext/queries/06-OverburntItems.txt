@@ -1,0 +1,72 @@
+================================================================================
+TAB: Overburnt Items
+================================================================================
+Sidebar icon: FireOutlined
+Component: src/components/QA/OverburntItems.tsx
+Hook: useOverburntItems() → src/hooks/useQAData.ts
+Calculation: calculateOverburntItems() → src/utils/qaCalculations.ts
+Data source: rawIssues from Zustand store
+
+--------------------------------------------------------------------------------
+NO ADDITIONAL API CALLS — uses rawIssues from store
+--------------------------------------------------------------------------------
+This tab depends heavily on LIVE data from the changelog + time-tracking fields.
+
+REQUIRED LIVE API FIELDS (all fetched in main FETCH_JIRA POST call):
+  timeoriginalestimate  → issue.timeEstimate (hours)
+  aggregatetimespent    → issue.timeLogged   (hours)
+  comment               → issue.commentsCount (total comment count)
+  expand=changelog      → issue.statusChanges[], issue.reopenCount, issue.assigneeChanges
+
+WITHOUT expand=changelog, this tab will show NO results because:
+  - statusChanges.length will always be 0 (never exceeds threshold of 5)
+  - reopenCount will always be 0
+  - assigneeChanges will always be 0
+
+--------------------------------------------------------------------------------
+OVERBURNT DETECTION CRITERIA (any one condition triggers inclusion)
+--------------------------------------------------------------------------------
+  CONDITION 1: timeLogged > timeEstimate AND timeEstimate > 0
+    → reason: "Time logged (Xh) > estimate (Yh)"
+    → score += 30
+
+  CONDITION 2: statusChanges.length > 5          ← requires changelog
+    → reason: "N status changes (threshold: 5)"
+    → score += 20
+
+  CONDITION 3: reopenCount > 0                   ← requires changelog
+    → reason: "Reopened N time(s)"
+    → score += reopenCount * 15
+
+  CONDITION 4: commentsCount > 10                ← requires comment field
+    → reason: "N comments (threshold: 10)"
+    → score += 10
+
+  CONDITION 5: assigneeChanges > 0               ← requires changelog
+    → reason: "Assignee changed N time(s)"
+    → score += assigneeChanges * 10
+
+RISK LEVEL:
+  High    — overburntScore >= 40
+  Medium  — overburntScore < 40
+
+INPUT DATA FIELDS USED:
+  issue.timeEstimate    — original estimate (hours, from timeoriginalestimate / 3600)
+  issue.timeLogged      — actual time spent (hours, from aggregatetimespent / 3600)
+  issue.commentsCount   — total comment count (from fields.comment.total)
+  issue.statusChanges[] — array of status change events from changelog
+  issue.reopenCount     — count of transitions to "Reopened" from changelog
+  issue.assigneeChanges — count of assignee field changes from changelog
+
+--------------------------------------------------------------------------------
+TABLE COLUMNS
+--------------------------------------------------------------------------------
+  Key | Summary | Risk | Overburnt Score (Progress) | Est.(h) | Logged(h) |
+  Status Changes | Reopens | Comments | Reasons
+  Sort: overburntScore DESC
+
+--------------------------------------------------------------------------------
+SUMMARY STATS (top cards)
+--------------------------------------------------------------------------------
+  Total Overburnt | High Risk | Medium Risk
+================================================================================

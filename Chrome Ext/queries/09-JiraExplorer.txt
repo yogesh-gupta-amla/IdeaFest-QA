@@ -1,0 +1,112 @@
+================================================================================
+TAB: Jira Explorer
+================================================================================
+Sidebar icon: SearchOutlined
+Component: src/components/QA/JiraExplorer.tsx
+Service: runJqlQuery() → src/services/jiraService.ts → background.ts RUN_JQL
+Data source: DIRECT Jira API call (not from store)
+
+--------------------------------------------------------------------------------
+QUERY — User-defined JQL
+--------------------------------------------------------------------------------
+Endpoint : POST /rest/api/3/issue/search  (RUN_JQL message via background.ts)
+JQL      : user-provided (editable textarea, default shown below)
+maxResults: user-defined 1–1000 (default 500)
+
+DEFAULT JQL:
+  project = "<current project key>" ORDER BY created DESC
+
+FIELDS FETCHED:
+  summary, status, issuetype, priority, assignee, reporter, project,
+  components, labels, created, updated, resolutiondate, duedate,
+  resolution, fixVersions, customfield_10016 (story points),
+  customfield_10020 (sprint), aggregatetimespent, timeoriginalestimate,
+  parent, subtasks
+
+NOTE: Jira Explorer does NOT use expand=changelog (for performance).
+      Changelog-dependent fields (statusChanges, reopenCount) are not
+      available here. Use the main dashboard tabs for those.
+
+--------------------------------------------------------------------------------
+RESPONSE TABS
+--------------------------------------------------------------------------------
+
+CHART TAB (default):
+  Group By (16 options):
+    Status           — group by issue.status
+    Assignee         — group by issue.assignee
+    Priority         — group by issue.priority
+    Issue Type       — group by issue.issueType
+    Project          — group by issue.project
+    Resolution       — group by issue.resolution
+    Sprint           — group by issue.sprint (customfield_10020)
+    Component        — group by issue.components[0]
+    Label            — group by issue.labels[0]
+    Fix Version      — group by issue.fixVersions[0]
+    Epic/Parent      — group by issue.epic (parent key)
+    Created Day      — group by date part of issue.created (YYYY-MM-DD)
+    Created Week     — group by ISO week of issue.created
+    Updated Day      — group by date part of issue.updated
+    Reporter         — group by issue.reporter
+    Status Category  — group by issue.statusCategory
+
+  Metric (4 options):
+    Count of Issues  — count of issues in each group
+    Story Points Sum — sum of customfield_10016 per group
+    Time Spent (h)   — sum of aggregatetimespent / 3600 per group
+    Time Estimate (h)— sum of timeoriginalestimate / 3600 per group
+
+  Chart Types (8 options):
+    Bar (Vertical)   — recharts BarChart vertical
+    Bar (Horizontal) — recharts BarChart layout="vertical"
+    Line             — recharts LineChart
+    Area             — recharts AreaChart
+    Pie              — recharts PieChart with Pie
+    Donut            — recharts PieChart with inner radius
+    Radar            — recharts RadarChart
+    Treemap          — recharts Treemap
+    Stacked Bar      — recharts BarChart with stacked bars
+
+  Stack By (for Stacked Bar only):
+    Priority | Issue Type | Status | Assignee | Status Category
+
+  Top N filter:
+    All | Top 10 | Top 15 | Top 20 | Top 30
+
+  Export:
+    Download as PNG  — html2canvas capture of chart div
+    Download as PDF  — html2canvas + jsPDF
+
+TABLE TAB:
+  Paginated Ant Design table
+  Columns: Key | Summary | Type | Priority | Status | Assignee |
+           Reporter | Sprint | Created
+
+RESPONSE TAB:
+  Raw JSON of all returned issues
+  Download JSON button
+
+--------------------------------------------------------------------------------
+EXAMPLE USEFUL JQL QUERIES
+--------------------------------------------------------------------------------
+  All open bugs:
+    project = "GSW" AND issuetype = Bug AND statusCategory != Done
+
+  Critical issues created this sprint:
+    project = "GSW" AND sprint in openSprints() AND priority in (Blocker, Critical)
+
+  Issues assigned to me not resolved:
+    assignee = currentUser() AND statusCategory != Done ORDER BY priority ASC
+
+  Production bugs this month:
+    project = "GSW" AND labels = production-bug AND created >= startOfMonth()
+
+  Reopened issues in last 30 days:
+    project = "GSW" AND status = Reopened AND updated >= -30d
+
+  Overdue issues:
+    project = "GSW" AND duedate < now() AND statusCategory != Done
+
+  Story points remaining in sprint:
+    project = "GSW" AND sprint in openSprints() AND statusCategory != Done
+================================================================================

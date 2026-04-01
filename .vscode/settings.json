@@ -1,0 +1,4 @@
+{
+  "typescript.tsdk": "Chrome Ext/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

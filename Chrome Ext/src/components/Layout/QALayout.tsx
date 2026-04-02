@@ -1,19 +1,20 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { Layout, Menu } from "antd";
 import InsightsLogo from "../common/InsightsLogo";
 import {
   DashboardOutlined,
   ClockCircleOutlined,
-  BugOutlined,
-  AlertOutlined,
   FireOutlined,
-  ApartmentOutlined,
   RobotOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
 import { QA_THEMES } from "../../themes";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
+import {
+  QUERY_TIME_RANGE_OPTIONS,
+  type QueryTimeRange,
+} from "../../utils/queryTimeRange";
 
 const { Sider, Content } = Layout;
 
@@ -25,15 +26,17 @@ interface QALayoutProps {
   projects?: JiraProject[];
   selectedProjectKey?: string;
   onProjectChange?: (key: string, name: string) => void;
+  onRefresh?: () => Promise<void> | void;
+  onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
 const NAV_ITEMS = [
   { key: "health", icon: <DashboardOutlined />, label: "Project Health" },
   { key: "ageing", icon: <ClockCircleOutlined />, label: "Ageing Analysis" },
-  { key: "top-stories", icon: <BugOutlined />, label: "Top Stories" },
-  { key: "leakage", icon: <AlertOutlined />, label: "Bug Leakage" },
+  // { key: "top-stories", icon: <BugOutlined />, label: "Top Stories" },
+  // { key: "leakage", icon: <AlertOutlined />, label: "Bug Leakage" },
   { key: "overburnt", icon: <FireOutlined />, label: "Overburnt Items" },
-  { key: "flow", icon: <ApartmentOutlined />, label: "Flow Impact" },
+  // { key: "flow", icon: <ApartmentOutlined />, label: "Flow Impact" },
   { key: "ai", icon: <RobotOutlined />, label: "AI Recommendations" },
   { key: "explorer", icon: <SearchOutlined />, label: "Jira Explorer" },
 ];
@@ -46,11 +49,41 @@ const QALayout: React.FC<QALayoutProps> = ({
   projects = [],
   selectedProjectKey = "",
   onProjectChange,
+  onRefresh,
+  onTimeRangeChange,
 }) => {
+  const [refreshing, setRefreshing] = useState(false);
+  const [switchingRange, setSwitchingRange] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setTimeout(() => setRefreshing(false), 800);
+    }
+  }, [onRefresh, refreshing]);
+
+  const handleTimeRangeChange = useCallback(
+    async (event: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!onTimeRangeChange || switchingRange) return;
+
+      setSwitchingRange(true);
+      try {
+        await onTimeRangeChange(event.target.value as QueryTimeRange);
+      } finally {
+        setSwitchingRange(false);
+      }
+    },
+    [onTimeRangeChange, switchingRange],
+  );
+
   const {
     activeSection,
     setActiveSection,
     themeId,
+    queryTimeRange,
     setTheme: setDashboardTheme,
   } = useDashboardStore();
 
@@ -162,8 +195,70 @@ const QALayout: React.FC<QALayoutProps> = ({
             </span>
           </div>
 
-          {/* Right: project selector + theme selector + auth badge + user */}
+          {/* Right: refresh + project selector + theme selector + auth badge + user */}
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {onTimeRangeChange && (
+              <select
+                value={queryTimeRange}
+                onChange={handleTimeRangeChange}
+                disabled={switchingRange}
+                title="Select reporting window"
+                style={{
+                  background: "var(--qa-bg-card)",
+                  color: "var(--qa-text-primary)",
+                  border: "1px solid var(--qa-border)",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                  fontSize: 12,
+                  cursor: switchingRange ? "not-allowed" : "pointer",
+                  minWidth: 115,
+                  opacity: switchingRange ? 0.7 : 1,
+                }}
+              >
+                {QUERY_TIME_RANGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {/* Refresh button */}
+            {onRefresh && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Refresh data"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  background: "var(--qa-bg-card)",
+                  color: "var(--qa-text-primary)",
+                  border: "1px solid var(--qa-border)",
+                  borderRadius: 6,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                  opacity: refreshing ? 0.7 : 1,
+                  transition: "opacity 0.2s",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    fontSize: 14,
+                    animation: refreshing
+                      ? "qa-spin 0.7s linear infinite"
+                      : "none",
+                    transformOrigin: "center",
+                  }}
+                >
+                  🔄
+                </span>
+                {refreshing ? "Syncing…" : "Sync"}
+              </button>
+            )}
+            <style>{`@keyframes qa-spin { to { transform: rotate(360deg); } }`}</style>
             {/* Project selector */}
             {projects.length > 0 && onProjectChange && (
               <select

@@ -13,6 +13,7 @@ import type {
   DashboardFilters,
   RiskLevel,
 } from "../types/qa";
+import type { QueryTimeRange } from "./queryTimeRange";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 export const calculateProjectHealth = (
   issues: QAIssue[],
   recentlyResolved?: QAIssue[],
+  timeRange: QueryTimeRange = "weekly",
 ): ProjectHealthResult => {
   const active = issues.filter(isActiveIssue);
   const total = active.length;
@@ -86,15 +88,17 @@ export const calculateProjectHealth = (
   });
   const slaBreachCount = slaBreachedIssues.length;
 
+  const rangeHours = timeRange === "today" ? 24 : 168;
+
   // Use recentlyResolved (last 7d) for closure rate if provided
   const resolvedInLast7d = recentlyResolved
     ? recentlyResolved.length
     : issues.filter((i) => {
         if (!i.resolved) return false;
-        return hoursSince(i.resolved) < 168;
+        return hoursSince(i.resolved) < rangeHours;
       }).length;
   const createdInLast7d = issues.filter(
-    (i) => hoursSince(i.created) < 168,
+    (i) => hoursSince(i.created) < rangeHours,
   ).length;
   const closureRate =
     createdInLast7d > 0 ? resolvedInLast7d / createdInLast7d : 1;
@@ -142,31 +146,58 @@ export const calculateProjectHealth = (
   const allIssuesForTrend = recentlyResolved
     ? [...issues, ...recentlyResolved]
     : issues;
-  const defectTrend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => {
-    const day = new Date();
-    day.setDate(day.getDate() - (6 - i));
-    const date = day.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    const dayMs = day.getTime();
-    day.setHours(0, 0, 0, 0);
-    const dayStart = day.getTime();
-    const nextMs = dayStart + 86400000;
-    const created = allIssuesForTrend.filter((iss) => {
-      const t = new Date(iss.created).getTime();
-      return t >= dayStart && t < nextMs;
-    }).length;
-    const resolved = allIssuesForTrend.filter((iss) => {
-      if (!iss.resolved) return false;
-      const t = new Date(iss.resolved).getTime();
-      return t >= dayStart && t < nextMs;
-    }).length;
-    const open = allIssuesForTrend.filter((iss) => {
-      return new Date(iss.created).getTime() <= nextMs && isActiveIssue(iss);
-    }).length;
-    return { date, created, resolved, open };
-  });
+  const defectTrend: TrendPoint[] =
+    timeRange === "today"
+      ? Array.from({ length: 24 }, (_, hour) => {
+          const slotStart = new Date();
+          slotStart.setHours(hour, 0, 0, 0);
+          const slotEnd = new Date(slotStart);
+          slotEnd.setHours(hour, 59, 59, 999);
+          const startMs = slotStart.getTime();
+          const endMs = slotEnd.getTime();
+          const label = `${String(hour).padStart(2, "0")}:00`;
+          const created = allIssuesForTrend.filter((iss) => {
+            const t = new Date(iss.created).getTime();
+            return t >= startMs && t <= endMs;
+          }).length;
+          const resolved = allIssuesForTrend.filter((iss) => {
+            if (!iss.resolved) return false;
+            const t = new Date(iss.resolved).getTime();
+            return t >= startMs && t <= endMs;
+          }).length;
+          const open = allIssuesForTrend.filter((iss) => {
+            return (
+              new Date(iss.created).getTime() <= endMs && isActiveIssue(iss)
+            );
+          }).length;
+          return { date: label, created, resolved, open };
+        })
+      : Array.from({ length: 7 }, (_, i) => {
+          const day = new Date();
+          day.setDate(day.getDate() - (6 - i));
+          const date = day.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+          day.setHours(0, 0, 0, 0);
+          const dayStart = day.getTime();
+          const nextMs = dayStart + 86400000;
+          const created = allIssuesForTrend.filter((iss) => {
+            const t = new Date(iss.created).getTime();
+            return t >= dayStart && t < nextMs;
+          }).length;
+          const resolved = allIssuesForTrend.filter((iss) => {
+            if (!iss.resolved) return false;
+            const t = new Date(iss.resolved).getTime();
+            return t >= dayStart && t < nextMs;
+          }).length;
+          const open = allIssuesForTrend.filter((iss) => {
+            return (
+              new Date(iss.created).getTime() <= nextMs && isActiveIssue(iss)
+            );
+          }).length;
+          return { date, created, resolved, open };
+        });
 
   const severityDistribution: SeverityBucket[] = (
     ["Blocker", "Critical", "High", "Medium", "Low"] as const

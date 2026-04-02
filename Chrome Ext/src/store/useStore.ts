@@ -2,10 +2,12 @@ import { create } from "zustand";
 import type { DashboardFilters, Priority } from "../types/qa";
 import type { Metrics, SnapshotMetrics, AuthMode, JiraIssue } from "../types";
 import { QA_THEMES, applyTheme } from "../themes";
+import type { QueryTimeRange } from "../utils/queryTimeRange";
 
 interface DashboardStore {
   themeId: string;
   activeSection: string;
+  queryTimeRange: QueryTimeRange;
   filters: DashboardFilters;
   projectKey: string;
   projectName: string;
@@ -18,8 +20,11 @@ interface DashboardStore {
   authMode: AuthMode;
   rawIssues: JiraIssue[];
   recentlyResolved: JiraIssue[];
+  projectDataLoaded: boolean;
   setRawIssues: (issues: JiraIssue[]) => void;
   setRecentlyResolved: (issues: JiraIssue[]) => void;
+  setQueryTimeRange: (timeRange: QueryTimeRange) => void;
+  setProjectDataLoaded: (loaded: boolean) => void;
   setTheme: (id: string) => void;
   setActiveSection: (section: string) => void;
   setFilters: (filters: Partial<DashboardFilters>) => void;
@@ -45,6 +50,7 @@ const defaultFilters: DashboardFilters = {
 export const useDashboardStore = create<DashboardStore>((set) => ({
   themeId: "dark-pro",
   activeSection: "health",
+  queryTimeRange: "weekly",
   filters: defaultFilters,
   projectKey: "",
   projectName: "",
@@ -57,8 +63,11 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   authMode: "none",
   rawIssues: [],
   recentlyResolved: [],
+  projectDataLoaded: false,
   setRawIssues: (issues) => set({ rawIssues: issues }),
   setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
+  setQueryTimeRange: (queryTimeRange) => set({ queryTimeRange }),
+  setProjectDataLoaded: (projectDataLoaded) => set({ projectDataLoaded }),
 
   setTheme: (id) => {
     const theme = QA_THEMES.find((t) => t.id === id);

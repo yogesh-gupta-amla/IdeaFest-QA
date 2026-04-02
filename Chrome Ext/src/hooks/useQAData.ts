@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useDashboardStore } from "../store/useStore";
 import { filterIssues } from "../utils/qaCalculations";
 import { mapJiraIssuesToQA } from "../utils/jiraToQA";
+import { generateAIProjectAnalysis } from "../utils/aiAnalysis";
 import {
   calculateProjectHealth,
   calculateAgeingItems,
@@ -9,7 +10,6 @@ import {
   calculateBugLeakage,
   calculateOverburntItems,
   calculateFlowImpact,
-  generateAIRecommendations,
 } from "../utils/qaCalculations";
 
 // Derive filtered QAIssue[] from live Jira data in the store
@@ -23,14 +23,15 @@ const useFilteredIssues = () => {
 };
 
 export const useQAIssues = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
-  return { data: issues, isLoading: rawIssues.length === 0, error: null };
+  return { data: issues, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useProjectHealth = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
+  const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
   const issues = useFilteredIssues();
   const resolvedQA = useMemo(
     () => mapJiraIssuesToQA(recentlyResolved),
@@ -38,70 +39,93 @@ export const useProjectHealth = () => {
   );
   const data = useMemo(
     () =>
-      rawIssues.length ? calculateProjectHealth(issues, resolvedQA) : null,
-    [rawIssues.length, issues, resolvedQA],
+      projectDataLoaded
+        ? calculateProjectHealth(issues, resolvedQA, queryTimeRange)
+        : null,
+    [projectDataLoaded, issues, queryTimeRange, resolvedQA],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useAgeingAnalysis = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
   const data = useMemo(
-    () => (rawIssues.length ? calculateAgeingItems(issues) : []),
-    [rawIssues.length, issues],
+    () => (projectDataLoaded ? calculateAgeingItems(issues) : []),
+    [projectDataLoaded, issues],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useTopStories = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
   const data = useMemo(
-    () => (rawIssues.length ? calculateTopStories(issues) : []),
-    [rawIssues.length, issues],
+    () => (projectDataLoaded ? calculateTopStories(issues) : []),
+    [projectDataLoaded, issues],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useBugLeakage = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
   const data = useMemo(
-    () => (rawIssues.length ? calculateBugLeakage(issues) : []),
-    [rawIssues.length, issues],
+    () => (projectDataLoaded ? calculateBugLeakage(issues) : []),
+    [projectDataLoaded, issues],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useOverburntItems = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
   const data = useMemo(
-    () => (rawIssues.length ? calculateOverburntItems(issues) : []),
-    [rawIssues.length, issues],
+    () => (projectDataLoaded ? calculateOverburntItems(issues) : []),
+    [projectDataLoaded, issues],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useFlowImpact = () => {
-  const rawIssues = useDashboardStore((s) => s.rawIssues);
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const issues = useFilteredIssues();
   const data = useMemo(
-    () => (rawIssues.length ? calculateFlowImpact(issues) : []),
-    [rawIssues.length, issues],
+    () => (projectDataLoaded ? calculateFlowImpact(issues) : []),
+    [projectDataLoaded, issues],
   );
-  return { data, isLoading: rawIssues.length === 0, error: null };
+  return { data, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useAIRecommendations = () => {
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const projectKey = useDashboardStore((s) => s.projectKey);
+  const projectName = useDashboardStore((s) => s.projectName);
+  const sprintName = useDashboardStore((s) => s.sprintName);
   const rawIssues = useDashboardStore((s) => s.rawIssues);
-  const issues = useFilteredIssues();
+  const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
+  const projectMetrics = useDashboardStore((s) => s.projectMetrics);
+  const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
   const data = useMemo(() => {
-    if (!rawIssues.length) return [];
-    const topStories = calculateTopStories(issues);
-    const ageingItems = calculateAgeingItems(issues);
-    return generateAIRecommendations(issues, topStories, ageingItems);
-  }, [rawIssues.length, issues]);
-  return { data, isLoading: rawIssues.length === 0, error: null };
+    if (!projectDataLoaded || !projectMetrics) return null;
+    return generateAIProjectAnalysis({
+      projectKey,
+      projectName,
+      sprintName,
+      timeRange: queryTimeRange,
+      metrics: projectMetrics,
+      openIssues: rawIssues,
+      recentlyResolved,
+    });
+  }, [
+    projectDataLoaded,
+    projectKey,
+    projectMetrics,
+    projectName,
+    queryTimeRange,
+    rawIssues,
+    recentlyResolved,
+    sprintName,
+  ]);
+  return { data, isLoading: !projectDataLoaded, error: null };
 };

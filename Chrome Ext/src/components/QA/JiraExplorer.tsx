@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import {
@@ -47,6 +47,11 @@ import {
 } from "recharts";
 import { useDashboardStore } from "../../store/useStore";
 import { runJqlQuery, type RawJiraIssue } from "../../services/jiraService";
+import {
+  applyExplorerTimeRange,
+  buildExplorerBaseJql,
+  getTimeRangeLabel,
+} from "../../utils/queryTimeRange";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -337,10 +342,11 @@ const renderPieLabel = ({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const JiraExplorer: React.FC = () => {
-  const { jiraUrl, authToken, authMode, projectKey } = useDashboardStore();
+  const { jiraUrl, authToken, authMode, projectKey, queryTimeRange } =
+    useDashboardStore();
 
   const [jql, setJql] = useState(() =>
-    projectKey ? `project = "${projectKey}" ORDER BY created DESC` : "",
+    buildExplorerBaseJql(projectKey, queryTimeRange),
   );
   const [maxResults, setMaxResults] = useState(500);
   const [running, setRunning] = useState(false);
@@ -355,6 +361,10 @@ const JiraExplorer: React.FC = () => {
 
   const chartRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setJql(buildExplorerBaseJql(projectKey, queryTimeRange));
+  }, [projectKey, queryTimeRange]);
+
   // Chart settings
   const [groupBy, setGroupBy] = useState("status");
   const [metric, setMetric] = useState("count");
@@ -368,7 +378,12 @@ const JiraExplorer: React.FC = () => {
     setError(null);
     try {
       const token = authMode === "token" ? authToken : null;
-      const result = await runJqlQuery(jiraUrl, jql.trim(), maxResults, token);
+      const result = await runJqlQuery(
+        jiraUrl,
+        applyExplorerTimeRange(jql.trim(), queryTimeRange),
+        maxResults,
+        token,
+      );
       if (result.success && result.issues) {
         setIssues(result.issues);
         setTotal(result.total ?? result.issues.length);
@@ -902,6 +917,11 @@ const JiraExplorer: React.FC = () => {
     );
   };
 
+  const effectiveJql = useMemo(
+    () => applyExplorerTimeRange(jql, queryTimeRange),
+    [jql, queryTimeRange],
+  );
+
   // ─── Panel style helpers ──────────────────────────────────────────────────
 
   const card = (children: React.ReactNode, extra?: React.CSSProperties) => (
@@ -980,34 +1000,59 @@ const JiraExplorer: React.FC = () => {
         <p style={{ margin: 0, color: "var(--qa-text-muted)", fontSize: 13 }}>
           Run any JQL query and visualise results as charts, tables, or raw JSON
         </p>
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "var(--qa-text-secondary)",
+          }}
+        >
+          Time window: <strong>{getTimeRangeLabel(queryTimeRange)}</strong>. If
+          your JQL does not include an explicit date filter, the selected window
+          is applied automatically.
+        </div>
       </div>
 
       {/* Query Input */}
       {card(
         <div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <textarea
-              value={jql}
-              onChange={(e) => setJql(e.target.value)}
-              placeholder="Enter JQL — e.g. project = GSW AND status != Done ORDER BY priority ASC"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleRun();
-              }}
-              style={{
-                flex: 1,
-                minHeight: 72,
-                resize: "vertical",
-                background: "var(--qa-bg-secondary)",
-                color: "var(--qa-text-primary)",
-                border: "1px solid var(--qa-border)",
-                borderRadius: 8,
-                padding: "10px 12px",
-                fontSize: 13,
-                fontFamily: "monospace",
-                outline: "none",
-                lineHeight: 1.5,
-              }}
-            />
+            <div style={{ flex: 1 }}>
+              <textarea
+                value={jql}
+                onChange={(e) => setJql(e.target.value)}
+                placeholder="Enter JQL — e.g. project = GSW AND status != Done ORDER BY priority ASC"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey))
+                    handleRun();
+                }}
+                style={{
+                  width: "100%",
+                  minHeight: 72,
+                  resize: "vertical",
+                  background: "var(--qa-bg-secondary)",
+                  color: "var(--qa-text-primary)",
+                  border: "1px solid var(--qa-border)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  outline: "none",
+                  lineHeight: 1.5,
+                }}
+              />
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  color: "var(--qa-text-muted)",
+                  fontFamily: "monospace",
+                  wordBreak: "break-word",
+                }}
+              >
+                Effective query: {effectiveJql || "-"}
+              </div>
+            </div>
             <div
               style={{
                 display: "flex",

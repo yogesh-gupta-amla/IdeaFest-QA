@@ -24,6 +24,11 @@ import LoadingOverlay from "./components/common/LoadingOverlay";
 import { useDashboardStore } from "./store/useStore";
 import { QA_THEMES, applyTheme } from "./themes";
 import Toast from "./components/common/Toast";
+import {
+  getCreatedTimeRangeClause,
+  getResolvedTimeRangeClause,
+  type QueryTimeRange,
+} from "./utils/queryTimeRange";
 
 export default function App() {
   const {
@@ -61,7 +66,7 @@ export default function App() {
     key: string;
     name: string;
   } | null>(null);
-  const { themeId } = useDashboardStore();
+  const { themeId, activeSection } = useDashboardStore();
 
   // Apply QA dashboard theme on first load
   useEffect(() => {
@@ -78,9 +83,15 @@ export default function App() {
         "jiraEmail",
         "jiraTokenB64",
         "authMode",
+        "lastActiveSection",
       ]);
       const t = (stored.theme as Theme) || "dark";
       setTheme(t);
+      if (typeof stored.lastActiveSection === "string") {
+        useDashboardStore
+          .getState()
+          .setActiveSection(stored.lastActiveSection as string);
+      }
       if (stored.jiraUrl) setJiraUrl(stored.jiraUrl as string);
       if (stored.jiraTokenB64) setAuthToken(stored.jiraTokenB64 as string);
       if (stored.authMode) {
@@ -96,6 +107,10 @@ export default function App() {
       setInitializing(false);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    void storageSet({ lastActiveSection: activeSection });
+  }, [activeSection]);
 
   const attemptAutoConnect = useCallback(
     async (url: string, token: string | null) => {
@@ -207,14 +222,20 @@ export default function App() {
 
   const handleLoadProject = useCallback(
     async (projectKey: string, projectName: string) => {
+      const store = useDashboardStore.getState();
+      const timeRange = store.queryTimeRange;
+      const createdRangeClause = getCreatedTimeRangeClause(timeRange);
+      const resolvedRangeClause = getResolvedTimeRangeClause(timeRange);
+
       setSelectedProjectKey(projectKey);
       setSelectedProjectName(projectName);
       setShowDashboard(false);
       setMetrics(null);
-      useDashboardStore.getState().setRawIssues([]);
-      useDashboardStore.getState().setRecentlyResolved([]);
+      store.setProjectDataLoaded(false);
+      store.setRawIssues([]);
+      store.setRecentlyResolved([]);
 
-      showLoading(`Fetching all issues for ${projectKey}…`);
+      showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
 
       const token = authMode === "token" ? authToken : null;
 
@@ -227,25 +248,25 @@ export default function App() {
       ] = await Promise.all([
         fetchJiraIssues(
           jiraUrl,
-          `project = "${projectKey}" AND resolution = Unresolved ORDER BY priority ASC, created DESC`,
+          `project = "${projectKey}" AND resolution = Unresolved AND ${createdRangeClause} ORDER BY priority ASC, created DESC`,
           2000,
           token,
         ),
         fetchJiraIssues(
           jiraUrl,
-          `project = "${projectKey}" AND created >= startOfDay() ORDER BY priority ASC`,
+          `project = "${projectKey}" AND ${createdRangeClause} ORDER BY priority ASC, created DESC`,
           200,
           token,
         ),
         fetchJiraIssues(
           jiraUrl,
-          `project = "${projectKey}" AND resolved >= startOfDay() ORDER BY resolved DESC`,
+          `project = "${projectKey}" AND ${resolvedRangeClause} ORDER BY resolved DESC`,
           200,
           token,
         ),
         fetchJiraIssues(
           jiraUrl,
-          `project = "${projectKey}" AND resolved >= -7d ORDER BY resolved DESC`,
+          `project = "${projectKey}" AND ${resolvedRangeClause} ORDER BY resolved DESC`,
           500,
           token,
         ),
@@ -273,7 +294,7 @@ export default function App() {
       const prevDate = new Date();
       prevDate.setDate(prevDate.getDate() - 1);
       const prevStr = prevDate.toISOString().slice(0, 10);
-      const snapKey = (d: string) => `snap_${projectKey}_${d}`;
+      const snapKey = (d: string) => `snap_${projectKey}_${timeRange}_${d}`;
       const snaps = await storageGet([snapKey(prevStr), snapKey(todayStr)]);
       const prevM = (snaps[snapKey(prevStr)] as SnapshotMetrics) || null;
       setPrevMetrics(prevM);
@@ -283,15 +304,14 @@ export default function App() {
       setShowDashboard(true);
 
       // Store metrics in QA dashboard store and navigate to overview tab
-      const store = useDashboardStore.getState();
       store.setProjectData(projectKey, projectName, m, prevM);
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
+      store.setProjectDataLoaded(true);
       store.setSprintInfo(
         sprintResult.sprintName || "",
         sprintResult.sprintGoal || "",
       );
-      store.setActiveSection("health");
 
       // Save today's snapshot
       storageSet({
@@ -307,15 +327,26 @@ export default function App() {
         },
       });
 
-      showToast(
-        `Loaded ${openIssues.length} open issues for ${projectKey}`,
-        "success",
-      );
+      showToast(`Loaded ${timeRange} data for ${projectKey}`, "success");
 
       // Navigate to sidebar dashboard
       setShowQADashboard(true);
     },
     [authMode, authToken, jiraUrl, showLoading, hideLoading, showToast],
+  );
+
+  const handleTimeRangeChange = useCallback(
+    async (timeRange: QueryTimeRange) => {
+      const store = useDashboardStore.getState();
+      if (store.queryTimeRange === timeRange) return;
+
+      store.setQueryTimeRange(timeRange);
+
+      if (selectedProjectKey && selectedProjectName) {
+        await handleLoadProject(selectedProjectKey, selectedProjectName);
+      }
+    },
+    [handleLoadProject, selectedProjectKey, selectedProjectName],
   );
 
   const handleManualEntriesChange = useCallback((entries: ManualEntry[]) => {
@@ -378,6 +409,13 @@ export default function App() {
           projects={projects}
           selectedProjectKey={selectedProjectKey}
           onLoadProject={handleLoadProject}
+          onTimeRangeChange={handleTimeRangeChange}
+          onRefresh={() => {
+            if (selectedProjectKey && selectedProjectName) {
+              return handleLoadProject(selectedProjectKey, selectedProjectName);
+            }
+            return Promise.resolve();
+          }}
           user={user}
           authMode={authMode}
         />

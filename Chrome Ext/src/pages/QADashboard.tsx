@@ -13,6 +13,7 @@ import FlowImpact from "../components/QA/FlowImpact";
 import AIRecommendations from "../components/QA/AIRecommendations";
 import JiraExplorer from "../components/QA/JiraExplorer";
 import type { AuthMode, JiraUser } from "../types";
+import type { QueryTimeRange } from "../utils/queryTimeRange";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,8 @@ interface QADashboardInnerProps {
   projects?: import("../types").JiraProject[];
   selectedProjectKey?: string;
   onLoadProject?: (key: string, name: string) => void;
+  onRefresh?: () => Promise<void> | void;
+  onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
 const QADashboardInner: React.FC<QADashboardInnerProps> = ({
@@ -50,6 +53,8 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
   projects,
   selectedProjectKey,
   onLoadProject,
+  onRefresh,
+  onTimeRangeChange,
 }) => {
   const { themeId, activeSection } = useDashboardStore();
   const themeConfig = getThemeById(themeId);
@@ -69,6 +74,8 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
         projects={projects}
         selectedProjectKey={selectedProjectKey}
         onProjectChange={onLoadProject}
+        onRefresh={onRefresh}
+        onTimeRangeChange={onTimeRangeChange}
       >
         {SECTION_MAP[activeSection] ?? <ProjectHealth />}
       </QALayout>
@@ -83,6 +90,8 @@ interface QADashboardProps {
   projects?: import("../types").JiraProject[];
   selectedProjectKey?: string;
   onLoadProject?: (key: string, name: string) => void;
+  onRefresh?: () => Promise<void> | void;
+  onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
 const QADashboard: React.FC<QADashboardProps> = ({
@@ -92,6 +101,8 @@ const QADashboard: React.FC<QADashboardProps> = ({
   projects,
   selectedProjectKey,
   onLoadProject,
+  onRefresh,
+  onTimeRangeChange,
 }) => {
   return (
     <QueryClientProvider client={queryClient}>
@@ -102,6 +113,8 @@ const QADashboard: React.FC<QADashboardProps> = ({
         projects={projects}
         selectedProjectKey={selectedProjectKey}
         onLoadProject={onLoadProject}
+        onRefresh={onRefresh}
+        onTimeRangeChange={onTimeRangeChange}
       />
     </QueryClientProvider>
   );

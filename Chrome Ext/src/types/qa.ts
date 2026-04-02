@@ -137,6 +137,109 @@ export interface AIRecommendation {
   category: string;
 }
 
+export type AIConfidence = "High" | "Medium" | "Low";
+export type AIActionSeverity = "High" | "Medium" | "Low";
+
+export interface AIHeadlineRecommendation {
+  headline: string;
+  impactPercentage: number;
+  confidence: AIConfidence;
+}
+
+export interface AIStoryWithMaxBugsInsight {
+  storyId: string;
+  bugCount: number;
+  rootCause: string;
+  recommendation: string;
+  expectedImpact: string;
+}
+
+export interface AIImmediateAction {
+  issue: string;
+  severity: AIActionSeverity;
+  action: string;
+  expectedImpact: string;
+}
+
+export interface AIRiskPrediction {
+  risk: string;
+  probability: AIConfidence;
+  impact: string;
+  prediction: string;
+  mitigation: string;
+}
+
+export interface AIOverutilizedResource {
+  name: string;
+  utilizationPercentage: number;
+  risk: string;
+  recommendation: string;
+}
+
+export interface AIUnderutilizedResource {
+  name: string;
+  utilizationPercentage: number;
+  opportunity: string;
+  recommendation: string;
+}
+
+export interface AIOptimizationTip {
+  area: string;
+  issue: string;
+  recommendation: string;
+  expectedGain: string;
+}
+
+export interface AIResourceOptimizationRecommendation {
+  problem: string;
+  currentState: string;
+  recommendedAction: string;
+  expectedOutcome: string;
+}
+
+export interface AIPrioritizedFix {
+  priorityRank: number;
+  fix: string;
+  reason: string;
+  expectedImpact: string;
+}
+
+export interface AIProjectAnalysis {
+  projectHealthScore: number;
+  executiveSummary: string;
+  aiRecommendation: AIHeadlineRecommendation;
+  kpiInsights: {
+    storyWithMaxBugs: AIStoryWithMaxBugsInsight | null;
+  };
+  aiInsightsPanel: {
+    immediateActions: AIImmediateAction[];
+    risksAndPredictions: AIRiskPrediction[];
+    resourceSuggestions: {
+      overutilizedResources: AIOverutilizedResource[];
+      underutilizedResources: AIUnderutilizedResource[];
+    };
+    optimizationTips: AIOptimizationTip[];
+  };
+  resourceOptimizationRecommendations: AIResourceOptimizationRecommendation[];
+  prioritizedFixes: AIPrioritizedFix[];
+  metricsSnapshot: {
+    totalIssues: number;
+    openIssues: number;
+    createdInRange: number;
+    resolvedInRange: number;
+    completionRate: number;
+    sprintVelocity: number;
+    cycleTimeHours: number;
+    leadTimeHours: number;
+    reopenedIssues: number;
+    overdueTasks: number;
+  };
+  projectKey: string;
+  projectName: string;
+  sprintName: string;
+  timeRangeLabel: string;
+}
+
 export interface DashboardFilters {
   dateRange: [string, string] | null;
   severity: Priority[];

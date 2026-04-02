@@ -94,6 +94,7 @@ const makeIssue = (
     description: getDescription(priority, MODULES[moduleIdx]),
     priority,
     status,
+    originalStatus: status,
     assignee: ASSIGNEES[assigneeIdx % ASSIGNEES.length],
     reporter: REPORTERS[n % REPORTERS.length],
     created,

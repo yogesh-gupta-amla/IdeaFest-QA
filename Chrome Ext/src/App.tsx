@@ -234,6 +234,7 @@ export default function App() {
       store.setProjectDataLoaded(false);
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
+      store.setAgeingIssues([]);
 
       showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
 
@@ -244,6 +245,7 @@ export default function App() {
         todayResult,
         resolvedResult,
         recentResolvedResult,
+        ageingResult,
         sprintResult,
       ] = await Promise.all([
         fetchJiraIssues(
@@ -270,6 +272,12 @@ export default function App() {
           500,
           token,
         ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") AND ${createdRangeClause} ORDER BY created DESC`,
+          500,
+          token,
+        ),
         fetchActiveSprint(jiraUrl, projectKey, token),
       ]);
 
@@ -287,6 +295,9 @@ export default function App() {
         : [];
       const recentlyResolved = recentResolvedResult.success
         ? recentResolvedResult.issues || []
+        : [];
+      const ageingIssues = ageingResult.success
+        ? ageingResult.issues || []
         : [];
 
       // Load snapshot for trends
@@ -307,6 +318,7 @@ export default function App() {
       store.setProjectData(projectKey, projectName, m, prevM);
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
+      store.setAgeingIssues(ageingIssues);
       store.setProjectDataLoaded(true);
       store.setSprintInfo(
         sprintResult.sprintName || "",

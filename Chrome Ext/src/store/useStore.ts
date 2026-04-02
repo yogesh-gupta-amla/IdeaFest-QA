@@ -20,9 +20,11 @@ interface DashboardStore {
   authMode: AuthMode;
   rawIssues: JiraIssue[];
   recentlyResolved: JiraIssue[];
+  ageingIssues: JiraIssue[];
   projectDataLoaded: boolean;
   setRawIssues: (issues: JiraIssue[]) => void;
   setRecentlyResolved: (issues: JiraIssue[]) => void;
+  setAgeingIssues: (issues: JiraIssue[]) => void;
   setQueryTimeRange: (timeRange: QueryTimeRange) => void;
   setProjectDataLoaded: (loaded: boolean) => void;
   setTheme: (id: string) => void;
@@ -63,9 +65,11 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   authMode: "none",
   rawIssues: [],
   recentlyResolved: [],
+  ageingIssues: [],
   projectDataLoaded: false,
   setRawIssues: (issues) => set({ rawIssues: issues }),
   setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
+  setAgeingIssues: (issues) => set({ ageingIssues: issues }),
   setQueryTimeRange: (queryTimeRange) => set({ queryTimeRange }),
   setProjectDataLoaded: (projectDataLoaded) => set({ projectDataLoaded }),
 

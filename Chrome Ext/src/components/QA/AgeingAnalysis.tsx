@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Row,
   Col,
@@ -19,12 +19,17 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Cell,
 } from "recharts";
 import { useAgeingAnalysis } from "../../hooks/useQAData";
 import ChartCard from "../Charts/ChartCard";
 import { exportAgeingToExcel } from "../../utils/exportUtils";
-import { FileExcelOutlined, WarningOutlined } from "@ant-design/icons";
+import {
+  FileExcelOutlined,
+  WarningOutlined,
+  ClockCircleOutlined,
+  BugOutlined,
+  AlertOutlined,
+} from "@ant-design/icons";
 import { Button } from "antd";
 import type { AgeingItem, AgeingStatus } from "../../types/qa";
 import type { ColumnsType } from "antd/es/table";
@@ -35,8 +40,17 @@ const AGEING_COLORS: Record<AgeingStatus, string> = {
   AGED: "#ff4d4f",
 };
 
+type AgeingTab = "all" | "over48" | "fresh";
+
+const TAB_CONFIG: { key: AgeingTab; label: string; icon: React.ReactNode }[] = [
+  { key: "all", label: "Total Critical/Blockers", icon: <AlertOutlined /> },
+  { key: "over48", label: "Reported >48 Hrs", icon: <ClockCircleOutlined /> },
+  { key: "fresh", label: "Fresh Bugs", icon: <BugOutlined /> },
+];
+
 const AgeingAnalysis: React.FC = () => {
-  const { data: items = [], isLoading, error } = useAgeingAnalysis();
+  const { data: result, isLoading, error } = useAgeingAnalysis();
+  const [activeTab, setActiveTab] = useState<AgeingTab>("all");
 
   if (isLoading)
     return (
@@ -52,15 +66,32 @@ const AgeingAnalysis: React.FC = () => {
       </div>
     );
   if (error) return <Alert type="error" message="Failed to load ageing data" />;
+  if (!result) return null;
 
-  const fresh = items.filter((i) => i.ageingStatus === "FRESH").length;
-  const atRisk = items.filter((i) => i.ageingStatus === "AT_RISK").length;
-  const aged = items.filter((i) => i.ageingStatus === "AGED").length;
-  const escalated = items.filter((i) => i.isEscalated).length;
+  const {
+    totalCriticalBlockers,
+    reportedOver48,
+    freshBugs,
+    riskInsights,
+    recommendations,
+  } = result;
+
+  // Pick the visible list based on active tab
+  const visibleItems =
+    activeTab === "over48"
+      ? reportedOver48
+      : activeTab === "fresh"
+        ? freshBugs
+        : totalCriticalBlockers;
+
+  const allItems = totalCriticalBlockers;
+  const fresh = allItems.filter((i) => i.ageingStatus === "FRESH").length;
+  const atRisk = allItems.filter((i) => i.ageingStatus === "AT_RISK").length;
+  const aged = allItems.filter((i) => i.ageingStatus === "AGED").length;
 
   // Stacked bar data — by priority
   const barData = ["Blocker", "Critical"].map((priority) => {
-    const subset = items.filter((i) => i.issue.priority === priority);
+    const subset = allItems.filter((i) => i.issue.priority === priority);
     return {
       priority,
       FRESH: subset.filter((i) => i.ageingStatus === "FRESH").length,
@@ -100,6 +131,14 @@ const AgeingAnalysis: React.FC = () => {
       ),
     },
     {
+      title: "Status",
+      dataIndex: ["issue", "originalStatus"],
+      width: 120,
+      render: (s: string) => (
+        <Tag color={s.toLowerCase() === "blocked" ? "red" : "default"}>{s}</Tag>
+      ),
+    },
+    {
       title: "Module",
       dataIndex: ["issue", "module"],
       width: 120,
@@ -109,8 +148,8 @@ const AgeingAnalysis: React.FC = () => {
       title: "Hours Elapsed",
       dataIndex: "hoursElapsed",
       width: 120,
-      sorter: (a, b) => b.hoursElapsed - a.hoursElapsed,
-      render: (h: number, row) => (
+      sorter: (a: AgeingItem, b: AgeingItem) => b.hoursElapsed - a.hoursElapsed,
+      render: (h: number, row: AgeingItem) => (
         <span
           style={{
             color: row.slaBreach ? "#ff4d4f" : "var(--qa-text-primary)",
@@ -127,7 +166,7 @@ const AgeingAnalysis: React.FC = () => {
       ),
     },
     {
-      title: "Status",
+      title: "Ageing",
       dataIndex: "ageingStatus",
       width: 100,
       render: (s: AgeingStatus) => (
@@ -145,7 +184,7 @@ const AgeingAnalysis: React.FC = () => {
       title: "Risk Score",
       dataIndex: "riskScore",
       width: 100,
-      sorter: (a, b) => b.riskScore - a.riskScore,
+      sorter: (a: AgeingItem, b: AgeingItem) => b.riskScore - a.riskScore,
       render: (score: number) => (
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div
@@ -177,16 +216,28 @@ const AgeingAnalysis: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         {[
           {
-            label: "Total Critical/Blocker",
-            value: items.length,
+            label: "Total Critical/Blockers",
+            value: totalCriticalBlockers.length,
             color: "var(--qa-accent)",
+            icon: "🚨",
           },
-          { label: "FRESH", value: fresh, color: "#52c41a" },
-          { label: "AT RISK", value: atRisk, color: "#faad14" },
-          { label: "AGED", value: aged, color: "#ff4d4f" },
-          { label: "Escalated (>48h)", value: escalated, color: "#ff0033" },
+          {
+            label: "Reported >48 Hrs",
+            value: reportedOver48.length,
+            color: "#ff0033",
+            icon: "⏰",
+          },
+          {
+            label: "Fresh Bugs (>8h unattended)",
+            value: freshBugs.length,
+            color: "#fa8c16",
+            icon: "🐛",
+          },
+          { label: "FRESH", value: fresh, color: "#52c41a", icon: "🟢" },
+          { label: "AT RISK", value: atRisk, color: "#faad14", icon: "🟡" },
+          { label: "AGED", value: aged, color: "#ff4d4f", icon: "🔴" },
         ].map((s) => (
-          <Col key={s.label} xs={12} sm={8} md={24 / 5}>
+          <Col key={s.label} xs={12} sm={8} md={4}>
             <Card
               style={{
                 background: "var(--qa-bg-card)",
@@ -194,12 +245,12 @@ const AgeingAnalysis: React.FC = () => {
                 borderRadius: 10,
                 textAlign: "center",
               }}
-              bodyStyle={{ padding: "16px 12px" }}
+              styles={{ body: { padding: "16px 12px" } }}
             >
               <Statistic
                 title={
                   <span style={{ fontSize: 11, color: "var(--qa-text-muted)" }}>
-                    {s.label}
+                    {s.icon} {s.label}
                   </span>
                 }
                 value={s.value}
@@ -210,7 +261,7 @@ const AgeingAnalysis: React.FC = () => {
         ))}
       </Row>
 
-      {/* Stacked Bar Chart */}
+      {/* Chart + Risk Insights */}
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         <Col xs={24} md={12}>
           <ChartCard
@@ -252,12 +303,12 @@ const AgeingAnalysis: React.FC = () => {
           </ChartCard>
         </Col>
 
-        {/* Risk Insights */}
+        {/* Risk Insights from analysis */}
         <Col xs={24} md={12}>
           <Card
             title={
               <span style={{ color: "var(--qa-text-primary)" }}>
-                Risk Insights
+                🚨 Risk Insights
               </span>
             }
             style={{
@@ -269,34 +320,15 @@ const AgeingAnalysis: React.FC = () => {
             styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {aged > 0 && (
+              {riskInsights.map((insight, idx) => (
                 <Alert
-                  type="error"
-                  message={`${aged} AGED issue(s) have breached SLA — escalate immediately`}
+                  key={idx}
+                  type={insight.type}
+                  message={insight.message}
                   showIcon
                 />
-              )}
-              {atRisk > 0 && (
-                <Alert
-                  type="warning"
-                  message={`${atRisk} AT_RISK issue(s) approaching SLA deadline`}
-                  showIcon
-                />
-              )}
-              {escalated > 0 && (
-                <Alert
-                  type="error"
-                  message={`${escalated} issue(s) open >48h and require 48-hour escalation override`}
-                  showIcon
-                />
-              )}
-              {aged === 0 && atRisk === 0 && (
-                <Alert
-                  type="success"
-                  message="No critical ageing risks detected"
-                  showIcon
-                />
-              )}
+              ))}
+
               <div style={{ marginTop: 8 }}>
                 <div
                   style={{
@@ -305,7 +337,7 @@ const AgeingAnalysis: React.FC = () => {
                     marginBottom: 6,
                   }}
                 >
-                  Recommendations:
+                  ✅ Recommendations:
                 </div>
                 <ul
                   style={{
@@ -315,12 +347,11 @@ const AgeingAnalysis: React.FC = () => {
                     paddingLeft: 20,
                   }}
                 >
-                  <li>Prioritize AGED issues in today's standup</li>
-                  <li>Apply 48-hour escalation for Production blockers</li>
-                  <li>
-                    Review Checkout &amp; Payment modules first (higher risk
-                    penalty)
-                  </li>
+                  {recommendations.map((rec, idx) => (
+                    <li key={idx} style={{ marginBottom: 4 }}>
+                      {rec}
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
@@ -328,18 +359,60 @@ const AgeingAnalysis: React.FC = () => {
         </Col>
       </Row>
 
+      {/* Tab Selector */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        {TAB_CONFIG.map((tab) => {
+          const count =
+            tab.key === "all"
+              ? totalCriticalBlockers.length
+              : tab.key === "over48"
+                ? reportedOver48.length
+                : freshBugs.length;
+          return (
+            <Button
+              key={tab.key}
+              type={activeTab === tab.key ? "primary" : "default"}
+              icon={tab.icon}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                borderRadius: 8,
+                ...(activeTab !== tab.key
+                  ? {
+                      background: "var(--qa-bg-card)",
+                      border: "1px solid var(--qa-border)",
+                      color: "var(--qa-text-secondary)",
+                    }
+                  : {}),
+              }}
+            >
+              {tab.label} ({count})
+            </Button>
+          );
+        })}
+      </div>
+
       {/* Table */}
       <Card
         title={
           <span style={{ color: "var(--qa-text-primary)" }}>
-            Critical / Blocker Issue Ageing
+            {activeTab === "over48"
+              ? "⏰ Issues Reported >48 Hours (Backlog/Open)"
+              : activeTab === "fresh"
+                ? "🐛 Fresh Bugs >8h Unattended (Backlog/Open)"
+                : "🚨 All Critical/Blocker Issues"}
           </span>
         }
         extra={
           <Button
             icon={<FileExcelOutlined />}
             size="small"
-            onClick={() => exportAgeingToExcel(items)}
+            onClick={() => exportAgeingToExcel(visibleItems)}
             style={{
               background: "var(--qa-bg-card)",
               border: "1px solid var(--qa-border)",
@@ -358,14 +431,25 @@ const AgeingAnalysis: React.FC = () => {
       >
         <Table
           columns={columns}
-          dataSource={items}
+          dataSource={visibleItems}
           rowKey={(r) => r.issue.id}
           size="small"
           pagination={{ pageSize: 10 }}
           rowClassName={(record) =>
             record.ageingStatus === "AGED" ? "qa-aged-row" : ""
           }
-          scroll={{ x: 800 }}
+          scroll={{ x: 900 }}
+          locale={{
+            emptyText: (
+              <div style={{ padding: 24, color: "var(--qa-text-muted)" }}>
+                {activeTab === "over48"
+                  ? "No Blocker/Critical bugs in Backlog/Open for >48 hours"
+                  : activeTab === "fresh"
+                    ? "No fresh bugs unattended for >8 hours"
+                    : "No Critical/Blocker issues found in the selected time range"}
+              </div>
+            ),
+          }}
         />
       </Card>
     </div>

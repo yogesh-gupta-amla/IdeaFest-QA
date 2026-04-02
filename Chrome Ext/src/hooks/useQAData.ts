@@ -5,7 +5,7 @@ import { mapJiraIssuesToQA } from "../utils/jiraToQA";
 import { generateAIProjectAnalysis } from "../utils/aiAnalysis";
 import {
   calculateProjectHealth,
-  calculateAgeingItems,
+  calculateAgeingAnalysis,
   calculateTopStories,
   calculateBugLeakage,
   calculateOverburntItems,
@@ -49,10 +49,13 @@ export const useProjectHealth = () => {
 
 export const useAgeingAnalysis = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
-  const issues = useFilteredIssues();
+  const ageingIssues = useDashboardStore((s) => s.ageingIssues);
   const data = useMemo(
-    () => (projectDataLoaded ? calculateAgeingItems(issues) : []),
-    [projectDataLoaded, issues],
+    () =>
+      projectDataLoaded
+        ? calculateAgeingAnalysis(mapJiraIssuesToQA(ageingIssues))
+        : null,
+    [projectDataLoaded, ageingIssues],
   );
   return { data, isLoading: !projectDataLoaded, error: null };
 };

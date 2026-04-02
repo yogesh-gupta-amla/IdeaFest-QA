@@ -82,6 +82,7 @@ export function mapJiraIssuesToQA(issues: JiraIssue[]): QAIssue[] {
       description: issue.description ?? "",
       priority,
       status,
+      originalStatus: issue.status || "",
       assignee: issue.assignee || "Unassigned",
       reporter: issue.reporter || "",
       created: issue.created || "",

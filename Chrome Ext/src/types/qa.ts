@@ -30,6 +30,7 @@ export interface QAIssue {
   description: string;
   priority: Priority;
   status: IssueStatus;
+  originalStatus: string;
   assignee: string;
   reporter: string;
   created: string;
@@ -84,6 +85,7 @@ export interface AgeingItem {
   slaHours: number;
   ageingStatus: AgeingStatus;
   isEscalated: boolean;
+  isBlocked: boolean;
   riskScore: number;
   slaBreach: boolean;
 }
@@ -92,6 +94,19 @@ export interface AgeingBucket {
   status: AgeingStatus;
   count: number;
   color: string;
+}
+
+export interface AgeingRiskInsight {
+  type: "error" | "warning" | "success" | "info";
+  message: string;
+}
+
+export interface AgeingAnalysisResult {
+  reportedOver48: AgeingItem[];
+  totalCriticalBlockers: AgeingItem[];
+  freshBugs: AgeingItem[];
+  riskInsights: AgeingRiskInsight[];
+  recommendations: string[];
 }
 
 export interface TopStory {

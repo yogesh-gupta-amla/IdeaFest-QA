@@ -3,6 +3,8 @@ import type {
   ProjectHealthResult,
   AgeingItem,
   AgeingStatus,
+  AgeingAnalysisResult,
+  AgeingRiskInsight,
   TopStory,
   BugLeakageItem,
   OverburntItem,
@@ -231,45 +233,192 @@ export const calculateProjectHealth = (
 const HIGH_RISK_MODULES = ["Checkout", "Payment"];
 const PROD_ENVIRONMENTS = ["Production"];
 
-export const calculateAgeingItems = (issues: QAIssue[]): AgeingItem[] => {
-  const active = issues.filter(
-    (i) =>
-      isActiveIssue(i) &&
-      (i.priority === "Critical" || i.priority === "Blocker"),
+/** Statuses considered "Backlog / Open" for the >48h and Fresh Bugs queries */
+const BACKLOG_OPEN_STATUSES = new Set(["backlog", "open"]);
+
+/** Check if originalStatus matches Backlog or Open */
+const isBacklogOrOpen = (originalStatus: string): boolean =>
+  BACKLOG_OPEN_STATUSES.has(originalStatus.toLowerCase().trim());
+
+/** Check if originalStatus looks like "Blocked" */
+const isBlockedStatus = (originalStatus: string): boolean =>
+  originalStatus.toLowerCase().trim() === "blocked";
+
+function buildAgeingItem(issue: QAIssue): AgeingItem {
+  const hoursElapsed = hoursSince(issue.created);
+  const { slaHours } = issue;
+  const slaRatio = hoursElapsed / slaHours;
+
+  let ageingStatus: AgeingStatus;
+  if (slaRatio < 0.6) ageingStatus = "FRESH";
+  else if (slaRatio < 1.0) ageingStatus = "AT_RISK";
+  else ageingStatus = "AGED";
+
+  // 48-hour override: if >48h and still in Backlog/Open → escalate
+  const isEscalated =
+    hoursElapsed > 48 && isBacklogOrOpen(issue.originalStatus);
+  if (isEscalated && ageingStatus === "FRESH") ageingStatus = "AT_RISK";
+
+  let riskScore = slaRatio * 50;
+  if (HIGH_RISK_MODULES.includes(issue.module)) riskScore += 20;
+  if (PROD_ENVIRONMENTS.includes(issue.environment)) riskScore += 20;
+  if (issue.reopenCount > 0) riskScore += issue.reopenCount * 5;
+  if (issue.statusChanges.length <= 1 && hoursElapsed > 24) riskScore += 10;
+
+  return {
+    issue,
+    hoursElapsed,
+    slaHours,
+    ageingStatus,
+    isEscalated,
+    isBlocked: isBlockedStatus(issue.originalStatus),
+    riskScore: Math.min(100, Math.round(riskScore)),
+    slaBreach: hoursElapsed > slaHours,
+  };
+}
+
+/**
+ * Ageing analysis based on three Jira query categories:
+ *
+ * 1. **Reported >48 Hrs** — Bug type, status IN (Backlog, Open), Blocker/Critical,
+ *    created in range, AND hours elapsed > 48.
+ *
+ * 2. **Total Critical/Blockers** — Bug/Defect type, all active statuses (NOT IN
+ *    Done, QA Done, Rejected, Ready For Production, etc.), Blocker/Critical,
+ *    created in range.
+ *
+ * 3. **Fresh Bugs** — Bug/Defect type, status IN (Backlog, Open), Blocker/Critical,
+ *    created in range, AND hours elapsed > 8 (created more than 8h ago but still
+ *    untouched).
+ */
+export const calculateAgeingAnalysis = (
+  issues: QAIssue[],
+): AgeingAnalysisResult => {
+  // All issues passed in are already filtered by the ageing JQL:
+  //   issuetype IN (Bug, Defect), priority IN (Blocker, Critical),
+  //   status NOT IN (Done, QA Done, Rejected, …), created in range
+  const allItems = issues
+    .map(buildAgeingItem)
+    .sort((a, b) => b.riskScore - a.riskScore);
+
+  // Category 1: Reported >48 Hrs
+  // Bug type only, status = Backlog/Open, hours > 48
+  const reportedOver48 = allItems.filter(
+    (item) =>
+      isBacklogOrOpen(item.issue.originalStatus) && item.hoursElapsed > 48,
   );
 
-  return active
-    .map((issue) => {
-      const hoursElapsed = hoursSince(issue.created);
-      const { slaHours } = issue;
-      const slaRatio = hoursElapsed / slaHours;
+  // Category 2: Total Critical/Blockers (all items from the fetch)
+  const totalCriticalBlockers = allItems;
 
-      let ageingStatus: AgeingStatus;
-      if (slaRatio < 0.6) ageingStatus = "FRESH";
-      else if (slaRatio < 1.0) ageingStatus = "AT_RISK";
-      else ageingStatus = "AGED";
+  // Category 3: Fresh Bugs
+  // Backlog/Open status, created > 8h ago (still unattended)
+  const freshBugs = allItems.filter(
+    (item) =>
+      isBacklogOrOpen(item.issue.originalStatus) && item.hoursElapsed > 8,
+  );
 
-      // 48-hour override: if >48h and still Open → escalate regardless
-      const isEscalated = hoursElapsed > 48 && issue.status === "Open";
-      if (isEscalated && ageingStatus === "FRESH") ageingStatus = "AT_RISK";
+  // ─── Risk Insights ──────────────────────────────────────────────────────
+  const riskInsights: AgeingRiskInsight[] = [];
+  const aged = allItems.filter((i) => i.ageingStatus === "AGED").length;
+  const atRisk = allItems.filter((i) => i.ageingStatus === "AT_RISK").length;
+  const blocked = allItems.filter((i) => i.isBlocked).length;
 
-      let riskScore = slaRatio * 50;
-      if (HIGH_RISK_MODULES.includes(issue.module)) riskScore += 20;
-      if (PROD_ENVIRONMENTS.includes(issue.environment)) riskScore += 20;
-      if (issue.reopenCount > 0) riskScore += issue.reopenCount * 5;
-      if (issue.statusChanges.length <= 1 && hoursElapsed > 24) riskScore += 10; // stagnation
+  if (reportedOver48.length > 0) {
+    riskInsights.push({
+      type: "error",
+      message: `${reportedOver48.length} Blocker/Critical issue(s) have been in Backlog/Open for >48 hours — immediate escalation required`,
+    });
+  }
+  if (aged > 0) {
+    riskInsights.push({
+      type: "error",
+      message: `${aged} issue(s) have breached SLA — these are AGED and must be resolved urgently`,
+    });
+  }
+  if (freshBugs.length > 0) {
+    riskInsights.push({
+      type: "warning",
+      message: `${freshBugs.length} bug(s) created >8 hours ago still sitting in Backlog/Open — pickup is overdue`,
+    });
+  }
+  if (blocked > 0) {
+    riskInsights.push({
+      type: "warning",
+      message: `${blocked} issue(s) are in Blocked status — identify and remove blockers to restore flow`,
+    });
+  }
+  if (atRisk > 0) {
+    riskInsights.push({
+      type: "warning",
+      message: `${atRisk} issue(s) approaching SLA deadline (AT RISK) — prioritize before they age`,
+    });
+  }
 
-      return {
-        issue,
-        hoursElapsed,
-        slaHours,
-        ageingStatus,
-        isEscalated,
-        riskScore: Math.min(100, Math.round(riskScore)),
-        slaBreach: hoursElapsed > slaHours,
-      };
-    })
-    .sort((a, b) => b.riskScore - a.riskScore);
+  // Module concentration
+  const moduleMap = new Map<string, number>();
+  allItems.forEach((i) => {
+    const mod = i.issue.module;
+    moduleMap.set(mod, (moduleMap.get(mod) || 0) + 1);
+  });
+  const hotModules = Array.from(moduleMap.entries())
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1]);
+  hotModules.forEach(([mod, count]) => {
+    riskInsights.push({
+      type: "error",
+      message: `Module "${mod}" has ${count} Critical/Blocker issues — RED area requiring focused attention`,
+    });
+  });
+
+  if (riskInsights.length === 0) {
+    riskInsights.push({
+      type: "success",
+      message:
+        "No critical ageing risks detected — all Blocker/Critical issues are within acceptable timelines",
+    });
+  }
+
+  // ─── Recommendations ────────────────────────────────────────────────────
+  const recommendations: string[] = [];
+  if (reportedOver48.length > 0) {
+    recommendations.push(
+      `Immediately triage and assign the ${reportedOver48.length} issue(s) that have been open >48 hours in Backlog/Open`,
+    );
+  }
+  if (freshBugs.length > 0) {
+    recommendations.push(
+      `Review the ${freshBugs.length} fresh bug(s) past the 8-hour pickup window — assign owners and set target dates`,
+    );
+  }
+  if (blocked > 0) {
+    recommendations.push(
+      `Unblock the ${blocked} blocked issue(s) — escalate dependency or environment issues in today's standup`,
+    );
+  }
+  if (hotModules.length > 0) {
+    recommendations.push(
+      `Focus QA effort on ${hotModules.map(([m]) => m).join(", ")} — high concentration of Critical/Blocker defects`,
+    );
+  }
+  if (aged > 0) {
+    recommendations.push(
+      `Set up automated escalation alerts for issues approaching the 48-hour mark to prevent further ageing`,
+    );
+  }
+  if (recommendations.length === 0) {
+    recommendations.push(
+      "Continue current triage cadence — all Critical/Blocker issues are being handled within SLA",
+    );
+  }
+
+  return {
+    reportedOver48,
+    totalCriticalBlockers,
+    freshBugs,
+    riskInsights,
+    recommendations,
+  };
 };
 
 // ─── 3. Top Stories with Max Bugs ────────────────────────────────────────────

@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { Row, Col, Card, Tag, Statistic, Spin, Alert, List } from "antd";
+import React, { useMemo, useState } from "react";
+import { Row, Col, Card, Tag, Statistic, Spin, Alert, List, Table } from "antd";
 import {
   LineChart,
   Line,
@@ -166,6 +166,13 @@ interface AIHealthAnalysis {
     blocker: number;
     critical: number;
     high: number;
+    issues: Array<{
+      key: string;
+      summary: string;
+      assignee: string;
+      priority: string;
+      status: string;
+    }>;
   }>;
 }
 
@@ -366,6 +373,13 @@ function analyzeHealthData(
     blocker: number;
     critical: number;
     high: number;
+    issues: Array<{
+      key: string;
+      summary: string;
+      assignee: string;
+      priority: string;
+      status: string;
+    }>;
   }> = [];
 
   if (timeRange === "weekly") {
@@ -390,6 +404,13 @@ function analyzeHealthData(
         blocker: dayIssues.filter((i) => i.priority === "Blocker").length,
         critical: dayIssues.filter((i) => i.priority === "Critical").length,
         high: dayIssues.filter((i) => i.priority === "High").length,
+        issues: dayIssues.map((i) => ({
+          key: i.key,
+          summary: i.summary,
+          assignee: i.assignee || "Unassigned",
+          priority: i.priority,
+          status: i.status,
+        })),
       });
     }
   } else {
@@ -411,6 +432,13 @@ function analyzeHealthData(
           blocker: hourIssues.filter((i) => i.priority === "Blocker").length,
           critical: hourIssues.filter((i) => i.priority === "Critical").length,
           high: hourIssues.filter((i) => i.priority === "High").length,
+          issues: hourIssues.map((i) => ({
+            key: i.key,
+            summary: i.summary,
+            assignee: i.assignee || "Unassigned",
+            priority: i.priority,
+            status: i.status,
+          })),
         });
       }
     }
@@ -449,6 +477,7 @@ const ProjectHealth: React.FC = () => {
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
   const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
   const periodCreatedIssues = projectMetrics?.todayCreated ?? [];
+  const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
 
   const analysis = useMemo(
     () =>
@@ -835,53 +864,239 @@ const ProjectHealth: React.FC = () => {
 
         {/* Period trend chart */}
         {analysis.periodsData.length > 0 && (
-          <ChartCard
-            title={
-              queryTimeRange === "weekly"
-                ? "Daily Bug Creation — Last 7 Days"
-                : "Hourly Bug Creation — Today"
-            }
-            id="ai-period-chart"
-            height={220}
-            style={{ marginBottom: 20 }}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={analysis.periodsData}
-                margin={{ top: 8, right: 16, left: -16, bottom: 0 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="var(--qa-border)"
-                />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: "var(--qa-text-muted)" }}
-                />
-                <YAxis tick={{ fontSize: 10, fill: "var(--qa-text-muted)" }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--qa-bg-card)",
-                    border: "1px solid var(--qa-border)",
+          <>
+            <ChartCard
+              title={
+                queryTimeRange === "weekly"
+                  ? "Daily Bug Creation — Last 7 Days"
+                  : "Hourly Bug Creation — Today"
+              }
+              id="ai-period-chart"
+              height={220}
+              style={{ marginBottom: 0 }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={analysis.periodsData}
+                  margin={{ top: 8, right: 16, left: -16, bottom: 0 }}
+                  onClick={(e: any) => {
+                    if (e?.activeLabel) {
+                      setSelectedPeriod((prev) =>
+                        prev === e.activeLabel ? null : e.activeLabel,
+                      );
+                    }
                   }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar
-                  dataKey="blocker"
-                  name="Blocker"
-                  stackId="a"
-                  fill="#ff0033"
-                />
-                <Bar
-                  dataKey="critical"
-                  name="Critical"
-                  stackId="a"
-                  fill="#ff4d4f"
-                />
-                <Bar dataKey="high" name="High" stackId="a" fill="#fa8c16" />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
+                  style={{ cursor: "pointer" }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="var(--qa-border)"
+                  />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: "var(--qa-text-muted)" }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "var(--qa-text-muted)" }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--qa-bg-card)",
+                      border: "1px solid var(--qa-border)",
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar
+                    dataKey="blocker"
+                    name="Blocker"
+                    stackId="a"
+                    fill="#ff0033"
+                  />
+                  <Bar
+                    dataKey="critical"
+                    name="Critical"
+                    stackId="a"
+                    fill="#ff4d4f"
+                  />
+                  <Bar dataKey="high" name="High" stackId="a" fill="#fa8c16" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            {/* Bug detail table */}
+            {(() => {
+              const displayIssues = selectedPeriod
+                ? (analysis.periodsData.find((p) => p.date === selectedPeriod)
+                    ?.issues ?? [])
+                : analysis.periodsData.flatMap((p) => p.issues);
+              return displayIssues.length > 0 ? (
+                <div style={{ marginBottom: 20 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 16px",
+                      background: "var(--qa-bg-elevated)",
+                      border: "1px solid var(--qa-border)",
+                      borderTop: 0,
+                      borderRadius: "0 0 10px 10px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--qa-text-primary)",
+                      }}
+                    >
+                      {selectedPeriod
+                        ? `🐛 Bugs on ${selectedPeriod}`
+                        : "🐛 All Bugs in Period"}{" "}
+                      — {displayIssues.length} issue
+                      {displayIssues.length !== 1 ? "s" : ""}
+                    </span>
+                    {selectedPeriod && (
+                      <Tag
+                        color="blue"
+                        style={{ cursor: "pointer", margin: 0 }}
+                        onClick={() => setSelectedPeriod(null)}
+                      >
+                        ✕ Clear filter
+                      </Tag>
+                    )}
+                  </div>
+                  <Table
+                    dataSource={displayIssues}
+                    rowKey="key"
+                    size="small"
+                    pagination={
+                      displayIssues.length > 10
+                        ? { pageSize: 10, size: "small" }
+                        : false
+                    }
+                    style={{
+                      background: "var(--qa-bg-card)",
+                      border: "1px solid var(--qa-border)",
+                      borderTop: 0,
+                      borderRadius: "0 0 10px 10px",
+                    }}
+                    columns={[
+                      {
+                        title: "Jira ID",
+                        dataIndex: "key",
+                        key: "key",
+                        width: 120,
+                        render: (key: string) => (
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              color: "var(--qa-accent)",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {key}
+                          </span>
+                        ),
+                      },
+                      {
+                        title: "Summary",
+                        dataIndex: "summary",
+                        key: "summary",
+                        ellipsis: true,
+                        render: (text: string) => (
+                          <span
+                            style={{
+                              color: "var(--qa-text-secondary)",
+                              fontSize: 12,
+                            }}
+                          >
+                            {text}
+                          </span>
+                        ),
+                      },
+                      {
+                        title: "Assignee",
+                        dataIndex: "assignee",
+                        key: "assignee",
+                        width: 150,
+                        render: (name: string) => (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color:
+                                name === "Unassigned"
+                                  ? "var(--qa-text-muted)"
+                                  : "var(--qa-text-primary)",
+                            }}
+                          >
+                            {name}
+                          </span>
+                        ),
+                      },
+                      {
+                        title: "Priority",
+                        dataIndex: "priority",
+                        key: "priority",
+                        width: 110,
+                        render: (p: string) => (
+                          <Tag
+                            color={
+                              p === "Blocker"
+                                ? "red"
+                                : p === "Critical"
+                                  ? "volcano"
+                                  : p === "High"
+                                    ? "orange"
+                                    : p === "Medium"
+                                      ? "gold"
+                                      : "green"
+                            }
+                            style={{ fontWeight: 600, margin: 0 }}
+                          >
+                            {p}
+                          </Tag>
+                        ),
+                        filters: [
+                          { text: "Blocker", value: "Blocker" },
+                          { text: "Critical", value: "Critical" },
+                          { text: "High", value: "High" },
+                          { text: "Medium", value: "Medium" },
+                          { text: "Low", value: "Low" },
+                        ],
+                        onFilter: (value: any, record: any) =>
+                          record.priority === value,
+                      },
+                      {
+                        title: "Status",
+                        dataIndex: "status",
+                        key: "status",
+                        width: 140,
+                        render: (s: string) => (
+                          <Tag style={{ margin: 0, fontSize: 11 }}>{s}</Tag>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              ) : !selectedPeriod ? null : (
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: "var(--qa-bg-elevated)",
+                    border: "1px solid var(--qa-border)",
+                    borderTop: 0,
+                    borderRadius: "0 0 10px 10px",
+                    marginBottom: 20,
+                    color: "var(--qa-text-muted)",
+                    fontSize: 13,
+                  }}
+                >
+                  No bugs found for {selectedPeriod}
+                </div>
+              );
+            })()}
+          </>
         )}
 
         {/* Health Decision */}

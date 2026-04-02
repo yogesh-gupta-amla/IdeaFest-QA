@@ -9,6 +9,7 @@ import {
   calculateTopStories,
   calculateBugLeakage,
   calculateOverburntItems,
+  calculateOverburntAnalysis,
   calculateFlowImpact,
 } from "../utils/qaCalculations";
 
@@ -82,12 +83,20 @@ export const useBugLeakage = () => {
 
 export const useOverburntItems = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const overburntIssues = useDashboardStore((s) => s.overburntIssues);
   const issues = useFilteredIssues();
   const data = useMemo(
     () => (projectDataLoaded ? calculateOverburntItems(issues) : []),
     [projectDataLoaded, issues],
   );
-  return { data, isLoading: !projectDataLoaded, error: null };
+  const analysis = useMemo(
+    () =>
+      projectDataLoaded
+        ? calculateOverburntAnalysis(mapJiraIssuesToQA(overburntIssues))
+        : null,
+    [projectDataLoaded, overburntIssues],
+  );
+  return { data, analysis, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useFlowImpact = () => {

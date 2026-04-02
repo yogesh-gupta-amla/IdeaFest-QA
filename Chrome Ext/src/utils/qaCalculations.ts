@@ -8,6 +8,9 @@ import type {
   TopStory,
   BugLeakageItem,
   OverburntItem,
+  OverburntItemDetail,
+  OverburntAnalysis,
+  OverburntSeverity,
   FlowImpactItem,
   AIRecommendation,
   TrendPoint,
@@ -508,13 +511,35 @@ export const calculateBugLeakage = (issues: QAIssue[]): BugLeakageItem[] => {
 
 // ─── 5. Overburnt Items ──────────────────────────────────────────────────────
 
+function classifySeverity(pct: number): OverburntSeverity {
+  if (pct > 160) return "Critical";
+  if (pct > 130) return "High";
+  return "Moderate";
+}
+
+function inferOverburnReason(issue: QAIssue, contributorCount: number): string {
+  const reasons: string[] = [];
+  if (issue.reopenCount > 0) reasons.push("rework/reopened cycles");
+  if (issue.assigneeChanges > 1) reasons.push("multiple handoffs");
+  if (contributorCount > 2) reasons.push("too many contributors");
+  if (issue.statusChanges.length > 6)
+    reasons.push("excessive status transitions");
+  if (issue.commentsCount > 10)
+    reasons.push("unclear requirements (high discussion)");
+  if (issue.timeEstimate > 0 && issue.timeLogged > issue.timeEstimate * 2)
+    reasons.push("severe underestimation");
+  else if (issue.timeEstimate > 0 && issue.timeLogged > issue.timeEstimate)
+    reasons.push("underestimation");
+  if (reasons.length === 0) reasons.push("general inefficiency or scope creep");
+  return reasons.join(", ");
+}
+
+/** Legacy wrapper for backward compatibility */
 export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
   const results: OverburntItem[] = [];
-
   issues.forEach((issue) => {
     const reasons: string[] = [];
     let score = 0;
-
     if (issue.timeLogged > issue.timeEstimate && issue.timeEstimate > 0) {
       reasons.push(
         `Time logged (${issue.timeLogged}h) > estimate (${issue.timeEstimate}h)`,
@@ -522,9 +547,7 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       score += 30;
     }
     if (issue.statusChanges.length > 5) {
-      reasons.push(
-        `${issue.statusChanges.length} status changes (threshold: 5)`,
-      );
+      reasons.push(`${issue.statusChanges.length} status changes`);
       score += 20;
     }
     if (issue.reopenCount > 0) {
@@ -532,14 +555,13 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       score += issue.reopenCount * 15;
     }
     if (issue.commentsCount > 10) {
-      reasons.push(`${issue.commentsCount} comments (threshold: 10)`);
+      reasons.push(`${issue.commentsCount} comments`);
       score += 10;
     }
     if (issue.assigneeChanges > 0) {
       reasons.push(`Assignee changed ${issue.assigneeChanges} time(s)`);
       score += issue.assigneeChanges * 10;
     }
-
     if (reasons.length > 0) {
       results.push({
         issue,
@@ -549,8 +571,309 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       });
     }
   });
-
   return results.sort((a, b) => b.overburntScore - a.overburntScore);
+};
+
+/** Full overburn analysis matching the AI Analyst prompt schema */
+export const calculateOverburntAnalysis = (
+  issues: QAIssue[],
+): OverburntAnalysis => {
+  // Build detailed items
+  const items: OverburntItemDetail[] = issues
+    .map((issue) => {
+      const est = issue.timeEstimate;
+      const spent = issue.timeLogged;
+      const wr =
+        issue.workratio > 0
+          ? issue.workratio
+          : est > 0
+            ? Math.round((spent / est) * 100)
+            : 100;
+      const overburnPct = wr;
+      const severity = classifySeverity(overburnPct);
+
+      // Build contributor map from worklogs
+      const contribMap = new Map<string, number>();
+      for (const wl of issue.worklogs) {
+        contribMap.set(
+          wl.author,
+          (contribMap.get(wl.author) || 0) + wl.timeSpentHours,
+        );
+      }
+      // If no worklogs, use assignee with total time spent
+      if (contribMap.size === 0 && spent > 0) {
+        contribMap.set(issue.assignee, spent);
+      }
+
+      const allContributors = Array.from(contribMap.entries())
+        .map(([name, timeLogged]) => ({
+          name,
+          timeLogged: Math.round(timeLogged * 100) / 100,
+        }))
+        .sort((a, b) => b.timeLogged - a.timeLogged);
+
+      const totalContribTime = allContributors.reduce(
+        (s, c) => s + c.timeLogged,
+        0,
+      );
+
+      const topContrib = allContributors[0] || null;
+      const topOverburnContributor = topContrib
+        ? {
+            name: topContrib.name,
+            timeLogged: topContrib.timeLogged,
+            isAssignee: topContrib.name === issue.assignee,
+            contributionPercentage:
+              totalContribTime > 0
+                ? Math.round((topContrib.timeLogged / totalContribTime) * 100)
+                : 100,
+          }
+        : null;
+
+      const reason = inferOverburnReason(issue, allContributors.length);
+
+      // Generate actionable fix
+      let actionableFix = "Review estimation accuracy for this type of work";
+      if (issue.reopenCount > 0)
+        actionableFix =
+          "Improve QA-dev handoff process to reduce rework cycles";
+      else if (allContributors.length > 2)
+        actionableFix =
+          "Assign single owner to reduce context-switching overhead";
+      else if (issue.assigneeChanges > 1)
+        actionableFix = "Stabilize task ownership early in the sprint";
+      else if (overburnPct > 160)
+        actionableFix =
+          "Split similar future tasks into smaller estimable units";
+
+      const excessHours = Math.max(0, spent - est);
+      const expectedImprovement =
+        excessHours > 0
+          ? `Save ~${excessHours}h by addressing ${reason.split(",")[0]}`
+          : "Reduce overburn risk through better estimation";
+
+      return {
+        issue,
+        originalEstimate: est,
+        timeSpent: spent,
+        workratio: wr,
+        overburnPercentage: overburnPct,
+        severity,
+        topOverburnContributor,
+        allContributors,
+        overburnReason: reason,
+        actionableFix,
+        expectedImprovement,
+      };
+    })
+    .sort((a, b) => b.overburnPercentage - a.overburnPercentage);
+
+  const moderate = items.filter((i) => i.severity === "Moderate").length;
+  const high = items.filter((i) => i.severity === "High").length;
+  const critical = items.filter((i) => i.severity === "Critical").length;
+
+  // Cross-issue contributor analysis
+  const globalContribMap = new Map<
+    string,
+    { totalExtra: number; issues: Set<string> }
+  >();
+  for (const item of items) {
+    const excessHours = Math.max(0, item.timeSpent - item.originalEstimate);
+    for (const c of item.allContributors) {
+      const entry = globalContribMap.get(c.name) || {
+        totalExtra: 0,
+        issues: new Set<string>(),
+      };
+      // Proportional excess attribution
+      const totalContribTime = item.allContributors.reduce(
+        (s, x) => s + x.timeLogged,
+        0,
+      );
+      const proportion =
+        totalContribTime > 0 ? c.timeLogged / totalContribTime : 0;
+      entry.totalExtra += excessHours * proportion;
+      entry.issues.add(item.issue.key);
+      globalContribMap.set(c.name, entry);
+    }
+  }
+  const topOverburnContributors = Array.from(globalContribMap.entries())
+    .map(([name, data]) => ({
+      name,
+      totalExtraTimeLogged: Math.round(data.totalExtra * 10) / 10,
+      issuesInvolved: data.issues.size,
+      risk:
+        data.issues.size >= 3
+          ? "Repeatedly contributing to overburn — systemic issue"
+          : "Isolated overburn",
+      recommendation:
+        data.issues.size >= 3
+          ? `Review workload balance for ${name}; consider pairing or splitting tasks`
+          : `Monitor ${name}'s upcoming tasks for estimation accuracy`,
+    }))
+    .filter((c) => c.totalExtraTimeLogged > 0)
+    .sort((a, b) => b.totalExtraTimeLogged - a.totalExtraTimeLogged)
+    .slice(0, 10);
+
+  // Assignee vs actual contributor mismatch
+  const assigneeMismatches = items
+    .filter(
+      (i) => i.topOverburnContributor && !i.topOverburnContributor.isAssignee,
+    )
+    .map((i) => ({
+      issueId: i.issue.key,
+      assignee: i.issue.assignee,
+      actualTopContributor: i.topOverburnContributor!.name,
+      insight: `${i.topOverburnContributor!.name} logged ${i.topOverburnContributor!.contributionPercentage}% of effort but is not the assignee — indicates task delegation or rework by others`,
+    }));
+
+  // Issue type analysis
+  const typeMap = new Map<string, number[]>();
+  for (const item of items) {
+    const t = item.issue.issueType || "Unknown";
+    const arr = typeMap.get(t) || [];
+    arr.push(item.overburnPercentage);
+    typeMap.set(t, arr);
+  }
+  const highRiskIssueTypes = Array.from(typeMap.entries())
+    .map(([issuetype, pcts]) => ({
+      issuetype,
+      avgOverburn: Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length),
+      count: pcts.length,
+    }))
+    .filter((t) => t.avgOverburn > 130 || t.count >= 3)
+    .sort((a, b) => b.avgOverburn - a.avgOverburn)
+    .map((t) => ({
+      issuetype: t.issuetype,
+      reason: `${t.count} issues with avg ${t.avgOverburn}% overburn — high estimation risk`,
+    }));
+
+  // Priority analysis
+  const prioMap = new Map<string, number[]>();
+  for (const item of items) {
+    const p = item.issue.priority;
+    const arr = prioMap.get(p) || [];
+    arr.push(item.overburnPercentage);
+    prioMap.set(p, arr);
+  }
+  const priorityBasedOverburn = Array.from(prioMap.entries()).map(
+    ([priority, pcts]) => ({
+      priority,
+      observation: `${pcts.length} overburnt issues (avg ${Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length)}%) — ${pcts.length > 2 ? "pattern suggests priority-level estimation gap" : "isolated cases"}`,
+    }),
+  );
+
+  // Cycle time flags — issues with excessive status transitions or long resolution
+  const cycleTimeFlags = items
+    .filter(
+      (i) => i.issue.statusChanges.length > 6 || i.overburnPercentage > 160,
+    )
+    .map((i) => ({
+      issueId: i.issue.key,
+      delayReason:
+        i.issue.statusChanges.length > 6
+          ? `${i.issue.statusChanges.length} status transitions indicate ping-pong or unclear workflow`
+          : `${i.overburnPercentage}% overburn suggests scope creep or blocked progress`,
+    }))
+    .slice(0, 10);
+
+  // Resource optimization
+  const resourceTimeMap = new Map<string, number>();
+  for (const item of items) {
+    for (const c of item.allContributors) {
+      resourceTimeMap.set(
+        c.name,
+        (resourceTimeMap.get(c.name) || 0) + c.timeLogged,
+      );
+    }
+  }
+  const allResourceTimes = Array.from(resourceTimeMap.entries()).sort(
+    (a, b) => b[1] - a[1],
+  );
+  const avgTime =
+    allResourceTimes.length > 0
+      ? allResourceTimes.reduce((s, [, t]) => s + t, 0) /
+        allResourceTimes.length
+      : 0;
+
+  const overutilized = allResourceTimes
+    .filter(([, t]) => t > avgTime * 1.5)
+    .map(([name, totalLoggedTime]) => ({
+      name,
+      totalLoggedTime: Math.round(totalLoggedTime * 10) / 10,
+      risk: "Burnout risk — significantly above average workload",
+      recommendation: `Redistribute ${Math.round(totalLoggedTime - avgTime)}h of overburnt tasks from ${name}`,
+    }));
+
+  const underutilized = allResourceTimes
+    .filter(([, t]) => t < avgTime * 0.5 && avgTime > 0)
+    .map(([name, t]) => ({
+      name,
+      utilizationGap: `${Math.round(((avgTime - t) / avgTime) * 100)}% below team average`,
+      recommendation: `Assign more overburnt/at-risk items to ${name} to balance team load`,
+    }));
+
+  // Executive summary
+  const totalExcess = items.reduce(
+    (s, i) => s + Math.max(0, i.timeSpent - i.originalEstimate),
+    0,
+  );
+  const executiveSummary =
+    items.length === 0
+      ? "No overburnt issues found in the selected time range. Team is tracking well on estimates."
+      : `${items.length} overburnt issues detected with ${Math.round(totalExcess)}h total excess time. ${critical} critical, ${high} high, ${moderate} moderate severity. ${assigneeMismatches.length > 0 ? `${assigneeMismatches.length} assignee-contributor mismatch(es) found.` : "No assignee mismatches."} ${topOverburnContributors.length > 0 ? `Top overburn contributor: ${topOverburnContributors[0].name} (${topOverburnContributors[0].totalExtraTimeLogged}h excess across ${topOverburnContributors[0].issuesInvolved} issues).` : ""}`;
+
+  // AI recommendation
+  let headline = "Improve estimation accuracy to reduce overburn";
+  let keyDriver = "underestimation";
+  let expectedImpact = `Reduce ~${Math.round(totalExcess * 0.3)}h of excess logged time`;
+  let confidence: "High" | "Medium" | "Low" = "Medium";
+
+  const reopenItems = items.filter((i) => i.issue.reopenCount > 0);
+  const handoffItems = items.filter((i) => i.issue.assigneeChanges > 1);
+
+  if (reopenItems.length > items.length * 0.3) {
+    headline = `Reduce rework cycles to cut overburn by ~${Math.round((reopenItems.length / items.length) * 25)}%`;
+    keyDriver = "excessive rework/reopen cycles";
+    expectedImpact = `Eliminate ~${Math.round(totalExcess * 0.4)}h of rework-driven excess`;
+    confidence = "High";
+  } else if (assigneeMismatches.length > items.length * 0.2) {
+    headline = `Fix assignee-contributor alignment to save ~${Math.round(totalExcess * 0.25)}h`;
+    keyDriver = "task delegation without ownership transfer";
+    expectedImpact = `Reduce context-switching overhead across ${assigneeMismatches.length} issues`;
+    confidence = "Medium";
+  } else if (handoffItems.length > items.length * 0.2) {
+    headline = `Stabilize task ownership to reduce multi-handoff overburn by ~${Math.round((handoffItems.length / items.length) * 20)}%`;
+    keyDriver = "multiple assignee handoffs";
+    expectedImpact = `Save ~${Math.round(totalExcess * 0.3)}h by reducing handoff overhead`;
+    confidence = "High";
+  } else if (critical > 0) {
+    headline = `Address ${critical} critically overburnt items to recover ~${Math.round(totalExcess * 0.5)}h`;
+    keyDriver = "critical overburn concentration";
+    expectedImpact = `Immediate recovery of ${Math.round(totalExcess * 0.5)}h through targeted fixes`;
+    confidence = "High";
+  }
+
+  return {
+    executiveSummary,
+    overburnInsights: {
+      totalItems: items.length,
+      moderateOverburn: moderate,
+      highOverburn: high,
+      criticalOverburn: critical,
+    },
+    items,
+    crossIssueAnalysis: {
+      topOverburnContributors,
+      assigneeVsActualMismatch: assigneeMismatches,
+    },
+    additionalInsights: {
+      highRiskIssueTypes,
+      priorityBasedOverburn,
+      cycleTimeFlags,
+    },
+    resourceOptimization: { overutilized, underutilized },
+    aiRecommendation: { headline, keyDriver, expectedImpact, confidence },
+  };
 };
 
 // ─── 6. Flow Impact ──────────────────────────────────────────────────────────

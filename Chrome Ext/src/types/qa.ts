@@ -15,6 +15,14 @@ export type Environment =
 export type AgeingStatus = "FRESH" | "AT_RISK" | "AGED";
 export type HealthStatus = "GREEN" | "RED";
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+export type OverburntSeverity = "Moderate" | "High" | "Critical";
+
+export interface WorklogEntry {
+  author: string;
+  timeSpentSeconds: number;
+  timeSpentHours: number;
+  started: string;
+}
 
 export interface StatusChange {
   from: IssueStatus;
@@ -48,6 +56,9 @@ export interface QAIssue {
   reopenCount: number;
   assigneeChanges: number;
   slaHours: number;
+  issueType: string;
+  workratio: number;
+  worklogs: WorklogEntry[];
 }
 
 export interface TrendPoint {
@@ -122,6 +133,81 @@ export interface BugLeakageItem {
   issue: QAIssue;
   leakageType: string;
   detectedIn: string;
+}
+
+export interface OverburntContributor {
+  name: string;
+  timeLogged: number;
+  isAssignee: boolean;
+  contributionPercentage: number;
+}
+
+export interface OverburntItemDetail {
+  issue: QAIssue;
+  originalEstimate: number;
+  timeSpent: number;
+  workratio: number;
+  overburnPercentage: number;
+  severity: OverburntSeverity;
+  topOverburnContributor: OverburntContributor | null;
+  allContributors: { name: string; timeLogged: number }[];
+  overburnReason: string;
+  actionableFix: string;
+  expectedImprovement: string;
+}
+
+export interface CrossIssueContributor {
+  name: string;
+  totalExtraTimeLogged: number;
+  issuesInvolved: number;
+  risk: string;
+  recommendation: string;
+}
+
+export interface AssigneeMismatch {
+  issueId: string;
+  assignee: string;
+  actualTopContributor: string;
+  insight: string;
+}
+
+export interface OverburntAnalysis {
+  executiveSummary: string;
+  overburnInsights: {
+    totalItems: number;
+    moderateOverburn: number;
+    highOverburn: number;
+    criticalOverburn: number;
+  };
+  items: OverburntItemDetail[];
+  crossIssueAnalysis: {
+    topOverburnContributors: CrossIssueContributor[];
+    assigneeVsActualMismatch: AssigneeMismatch[];
+  };
+  additionalInsights: {
+    highRiskIssueTypes: { issuetype: string; reason: string }[];
+    priorityBasedOverburn: { priority: string; observation: string }[];
+    cycleTimeFlags: { issueId: string; delayReason: string }[];
+  };
+  resourceOptimization: {
+    overutilized: {
+      name: string;
+      totalLoggedTime: number;
+      risk: string;
+      recommendation: string;
+    }[];
+    underutilized: {
+      name: string;
+      utilizationGap: string;
+      recommendation: string;
+    }[];
+  };
+  aiRecommendation: {
+    headline: string;
+    keyDriver: string;
+    expectedImpact: string;
+    confidence: "High" | "Medium" | "Low";
+  };
 }
 
 export interface OverburntItem {

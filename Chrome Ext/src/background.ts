@@ -189,6 +189,8 @@ async function fetchJiraIssues(
       "duedate",
       "description",
       "comment",
+      "worklog",
+      "workratio",
     ].join(",");
     const fieldsStr = fields;
 
@@ -331,6 +333,20 @@ async function fetchJiraIssues(
         statusChanges,
         reopenCount,
         assigneeChanges,
+        workratio:
+          typeof fields.workratio === "number" ? fields.workratio : null,
+        worklogs: (() => {
+          const wl = fields.worklog as Record<string, unknown> | undefined;
+          if (!wl) return [];
+          const entries = (wl.worklogs as Record<string, unknown>[]) || [];
+          return entries.map((e: Record<string, unknown>) => ({
+            author:
+              ((e.author as Record<string, unknown>)?.displayName as string) ||
+              "Unknown",
+            timeSpentSeconds: (e.timeSpentSeconds as number) || 0,
+            started: (e.started as string) || "",
+          }));
+        })(),
       };
     });
     return { success: true, total: totalAvailable, issues };

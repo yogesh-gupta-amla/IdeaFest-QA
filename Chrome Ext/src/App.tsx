@@ -235,6 +235,7 @@ export default function App() {
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
       store.setAgeingIssues([]);
+      store.setOverburntIssues([]);
 
       showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
 
@@ -246,6 +247,7 @@ export default function App() {
         resolvedResult,
         recentResolvedResult,
         ageingResult,
+        overburntResult,
         sprintResult,
       ] = await Promise.all([
         fetchJiraIssues(
@@ -278,6 +280,12 @@ export default function App() {
           500,
           token,
         ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND ${timeRange === "today" ? "worklogDate >= startOfDay()" : "worklogDate >= -7d"} ORDER BY updated DESC`,
+          500,
+          token,
+        ),
         fetchActiveSprint(jiraUrl, projectKey, token),
       ]);
 
@@ -299,6 +307,9 @@ export default function App() {
       const ageingIssues = ageingResult.success
         ? ageingResult.issues || []
         : [];
+      const overburntIssues = overburntResult.success
+        ? overburntResult.issues || []
+        : [];
 
       // Load snapshot for trends
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -319,6 +330,7 @@ export default function App() {
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
       store.setAgeingIssues(ageingIssues);
+      store.setOverburntIssues(overburntIssues);
       store.setProjectDataLoaded(true);
       store.setSprintInfo(
         sprintResult.sprintName || "",

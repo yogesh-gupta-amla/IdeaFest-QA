@@ -11,6 +11,8 @@ import {
   calculateOverburntItems,
   calculateOverburntAnalysis,
   calculateFlowImpact,
+  calculateEarlyCompletions,
+  calculateCodeIntelligence,
 } from "../utils/qaCalculations";
 
 // Derive filtered QAIssue[] from live Jira data in the store
@@ -109,6 +111,21 @@ export const useFlowImpact = () => {
   return { data, isLoading: !projectDataLoaded, error: null };
 };
 
+export const useEarlyCompletions = () => {
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const earlyCompletionIssues = useDashboardStore(
+    (s) => s.earlyCompletionIssues,
+  );
+  const data = useMemo(
+    () =>
+      projectDataLoaded
+        ? calculateEarlyCompletions(mapJiraIssuesToQA(earlyCompletionIssues))
+        : null,
+    [projectDataLoaded, earlyCompletionIssues],
+  );
+  return { data, isLoading: !projectDataLoaded, error: null };
+};
+
 export const useAIRecommendations = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const projectKey = useDashboardStore((s) => s.projectKey);
@@ -139,5 +156,16 @@ export const useAIRecommendations = () => {
     recentlyResolved,
     sprintName,
   ]);
+  return { data, isLoading: !projectDataLoaded, error: null };
+};
+
+export const useCodeIntelligence = () => {
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const codeIntelIssues = useDashboardStore((s) => s.codeIntelIssues);
+  const data = useMemo(
+    () =>
+      projectDataLoaded ? calculateCodeIntelligence(codeIntelIssues) : null,
+    [projectDataLoaded, codeIntelIssues],
+  );
   return { data, isLoading: !projectDataLoaded, error: null };
 };

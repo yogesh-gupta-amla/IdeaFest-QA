@@ -7,6 +7,8 @@ import {
   FireOutlined,
   RobotOutlined,
   SearchOutlined,
+  TrophyOutlined,
+  CodeOutlined,
 } from "@ant-design/icons";
 import { useDashboardStore } from "../../store/useStore";
 import { QA_THEMES } from "../../themes";
@@ -37,6 +39,12 @@ const NAV_ITEMS = [
   // { key: "leakage", icon: <AlertOutlined />, label: "Bug Leakage" },
   { key: "overburnt", icon: <FireOutlined />, label: "Overburnt Items" },
   // { key: "flow", icon: <ApartmentOutlined />, label: "Flow Impact" },
+  {
+    key: "early-completions",
+    icon: <TrophyOutlined />,
+    label: "Early Completions",
+  },
+  { key: "code-intel", icon: <CodeOutlined />, label: "Code Intelligence" },
   { key: "ai", icon: <RobotOutlined />, label: "AI Recommendations" },
   { key: "explorer", icon: <SearchOutlined />, label: "Jira Explorer" },
 ];

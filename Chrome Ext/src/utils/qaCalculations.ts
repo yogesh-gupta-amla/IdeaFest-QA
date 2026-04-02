@@ -17,6 +17,15 @@ import type {
   SeverityBucket,
   DashboardFilters,
   RiskLevel,
+  EarlyCompletionItem,
+  EarlyCompletionAnalysis,
+  CodeIntelIssue,
+  CodeIntelAnalysis,
+  ReusableComponent,
+  RecentImplementation,
+  DuplicateDetection,
+  DeveloperInsight,
+  CodeIntelRecommendation,
 } from "../types/qa";
 import type { QueryTimeRange } from "./queryTimeRange";
 
@@ -1027,3 +1036,438 @@ export const generateAIRecommendations = (
 
   return recommendations.slice(0, 3);
 };
+
+// ─── 8. Early Completions ───────────────────────────────────────────────────
+
+export const calculateEarlyCompletions = (
+  issues: QAIssue[],
+): EarlyCompletionAnalysis => {
+  // Only Done issues with both originalEstimate and resolved date
+  const doneIssues = issues.filter(
+    (i) =>
+      i.originalStatus?.toLowerCase() === "done" ||
+      i.status === "Resolved" ||
+      i.status === "Closed",
+  );
+
+  const withEstimate = doneIssues.filter(
+    (i) => i.timeEstimate > 0 && i.resolved,
+  );
+
+  const earlyItems: EarlyCompletionItem[] = [];
+
+  for (const issue of withEstimate) {
+    const createdMs = new Date(issue.created).getTime();
+    const resolvedMs = new Date(issue.resolved!).getTime();
+    if (resolvedMs <= createdMs) continue; // skip invalid
+
+    const timeTakenHours =
+      Math.round(((resolvedMs - createdMs) / (1000 * 60 * 60)) * 100) / 100;
+    const originalEstimateHours =
+      Math.round((issue.timeEstimate / 3600) * 100) / 100;
+
+    if (timeTakenHours < originalEstimateHours) {
+      earlyItems.push({
+        issue,
+        createdDate: issue.created,
+        resolutionDate: issue.resolved!,
+        originalEstimateHours,
+        timeTakenHours,
+        timeSavedHours:
+          Math.round((originalEstimateHours - timeTakenHours) * 100) / 100,
+      });
+    }
+  }
+
+  // Sort by time saved descending
+  earlyItems.sort((a, b) => b.timeSavedHours - a.timeSavedHours);
+
+  const totalEarlyItems = earlyItems.length;
+  const totalDoneItems = withEstimate.length;
+  const avgTimeSavedHours =
+    totalEarlyItems > 0
+      ? Math.round(
+          (earlyItems.reduce((s, i) => s + i.timeSavedHours, 0) /
+            totalEarlyItems) *
+            100,
+        ) / 100
+      : 0;
+  const earlyCompletionPercentage =
+    totalDoneItems > 0
+      ? Math.round((totalEarlyItems / totalDoneItems) * 10000) / 100
+      : 0;
+
+  return {
+    items: earlyItems,
+    totalEarlyItems,
+    totalDoneItems,
+    avgTimeSavedHours,
+    earlyCompletionPercentage,
+  };
+};
+
+// ── Code Intelligence Analysis ──────────────────────────────────────────────
+export const calculateCodeIntelligence = (
+  issues: CodeIntelIssue[],
+): CodeIntelAnalysis => {
+  const totalCommits = issues.reduce((s, i) => s + i.commits.length, 0);
+  const totalPRs = issues.reduce((s, i) => s + i.pullRequests.length, 0);
+  const hasDevInfo = totalCommits > 0 || totalPRs > 0;
+
+  // ── 1. Keyword extraction from summaries, descriptions, labels, components ──
+  const keywordMap = new Map<string, Set<string>>();
+  const fileMap = new Map<string, Set<string>>();
+  const devCommitMap = new Map<
+    string,
+    { commits: string[]; issues: Set<string>; files: Set<string> }
+  >();
+
+  for (const issue of issues) {
+    const tokens = extractKeywords(issue);
+    for (const token of tokens) {
+      if (!keywordMap.has(token)) keywordMap.set(token, new Set());
+      keywordMap.get(token)!.add(issue.issueKey);
+    }
+    for (const c of issue.commits) {
+      for (const f of c.files) {
+        const dir = f.split("/").slice(0, -1).join("/") || f;
+        if (!fileMap.has(dir)) fileMap.set(dir, new Set());
+        fileMap.get(dir)!.add(issue.issueKey);
+      }
+      const dev = c.author || issue.assignee;
+      if (!devCommitMap.has(dev))
+        devCommitMap.set(dev, {
+          commits: [],
+          issues: new Set(),
+          files: new Set(),
+        });
+      const d = devCommitMap.get(dev)!;
+      d.commits.push(c.id);
+      d.issues.add(issue.issueKey);
+      c.files.forEach((f) => d.files.add(f));
+    }
+    // Also count assignees even without commits
+    if (issue.commits.length === 0) {
+      const dev = issue.assignee;
+      if (dev && dev !== "Unassigned") {
+        if (!devCommitMap.has(dev))
+          devCommitMap.set(dev, {
+            commits: [],
+            issues: new Set(),
+            files: new Set(),
+          });
+        devCommitMap.get(dev)!.issues.add(issue.issueKey);
+      }
+    }
+  }
+
+  // ── 2. Reusable components (keywords/files shared across 2+ issues) ──
+  const reusableComponents: ReusableComponent[] = [];
+
+  // From file overlap
+  for (const [dir, issueKeys] of fileMap) {
+    if (issueKeys.size >= 2) {
+      const relIssues = Array.from(issueKeys);
+      const commits = issues
+        .filter((i) => issueKeys.has(i.issueKey))
+        .flatMap((i) => i.commits)
+        .filter((c) => c.files.some((f) => f.startsWith(dir)))
+        .slice(0, 5);
+      reusableComponents.push({
+        componentName: dir.split("/").pop() || dir,
+        description: `Shared code path: ${dir} — modified across ${issueKeys.size} issues`,
+        relatedIssues: relIssues,
+        relevantCommits: commits.map((c) => ({
+          commitId: c.id,
+          url: c.url,
+          summary: c.message.substring(0, 80),
+        })),
+        reusabilityScore:
+          issueKeys.size >= 4 ? "High" : issueKeys.size >= 3 ? "Medium" : "Low",
+        recommendedUsage: `Extract reusable logic from ${dir} into a shared module/service`,
+      });
+    }
+  }
+
+  // From keyword overlap
+  const processedKeywords = new Set<string>();
+  for (const [keyword, issueKeys] of keywordMap) {
+    if (issueKeys.size >= 3 && !processedKeywords.has(keyword)) {
+      processedKeywords.add(keyword);
+      const relIssues = Array.from(issueKeys);
+      const commits = issues
+        .filter((i) => issueKeys.has(i.issueKey))
+        .flatMap((i) => i.commits)
+        .slice(0, 3);
+      reusableComponents.push({
+        componentName: keyword,
+        description: `Functionality area "${keyword}" appears in ${issueKeys.size} issues — potential shared service`,
+        relatedIssues: relIssues,
+        relevantCommits: commits.map((c) => ({
+          commitId: c.id,
+          url: c.url,
+          summary: c.message.substring(0, 80),
+        })),
+        reusabilityScore: issueKeys.size >= 5 ? "High" : "Medium",
+        recommendedUsage: `Consolidate "${keyword}" implementations into a reusable module`,
+      });
+    }
+  }
+  reusableComponents.sort(
+    (a, b) =>
+      (b.reusabilityScore === "High"
+        ? 3
+        : b.reusabilityScore === "Medium"
+          ? 2
+          : 1) -
+      (a.reusabilityScore === "High"
+        ? 3
+        : a.reusabilityScore === "Medium"
+          ? 2
+          : 1),
+  );
+
+  // ── 3. Recent implementations ──
+  const recentImplementations: RecentImplementation[] = [];
+  for (const issue of issues.slice(0, 20)) {
+    if (issue.commits.length > 0) {
+      const latestCommit = issue.commits[0];
+      recentImplementations.push({
+        featureArea:
+          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        issueId: issue.issueKey,
+        commitId: latestCommit.id,
+        url: latestCommit.url,
+        description: issue.summary,
+        filesImpacted: [
+          ...new Set(issue.commits.flatMap((c) => c.files)),
+        ].slice(0, 10),
+      });
+    } else {
+      recentImplementations.push({
+        featureArea:
+          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        issueId: issue.issueKey,
+        commitId: "",
+        url: "",
+        description: issue.summary,
+        filesImpacted: [],
+      });
+    }
+  }
+
+  // ── 4. Duplicate / overlap detection ──
+  const duplicateDetection: DuplicateDetection[] = [];
+  const issuesBySummary = new Map<string, string[]>();
+  for (const issue of issues) {
+    const normalized = issue.summary
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .split(" ")
+      .filter((w) => w.length > 3)
+      .sort()
+      .join(" ");
+    const key = normalized.substring(0, 60);
+    if (!issuesBySummary.has(key)) issuesBySummary.set(key, []);
+    issuesBySummary.get(key)!.push(issue.issueKey);
+  }
+  for (const [, keys] of issuesBySummary) {
+    if (keys.length >= 2) {
+      duplicateDetection.push({
+        issueIds: keys,
+        similarityReason: "Similar summary text and likely duplicate work",
+        risk:
+          keys.length >= 3
+            ? "High — significant wasted effort"
+            : "Medium — potential redundancy",
+        recommendation: `Review ${keys.join(", ")} for consolidation or deduplication`,
+      });
+    }
+  }
+  // Component-based overlap
+  const componentIssues = new Map<string, string[]>();
+  for (const issue of issues) {
+    for (const comp of issue.components) {
+      if (!componentIssues.has(comp)) componentIssues.set(comp, []);
+      componentIssues.get(comp)!.push(issue.issueKey);
+    }
+  }
+  for (const [comp, keys] of componentIssues) {
+    if (keys.length >= 5) {
+      duplicateDetection.push({
+        issueIds: keys.slice(0, 5),
+        similarityReason: `${keys.length} issues touch component "${comp}" — possible architectural issue`,
+        risk: "Medium — high concentration suggests shared root cause",
+        recommendation: `Investigate "${comp}" for shared defects or design improvements`,
+      });
+    }
+  }
+
+  // ── 5. Developer insights ──
+  const developerInsights: DeveloperInsight[] = [];
+  for (const [dev, info] of devCommitMap) {
+    if (dev === "Unassigned") continue;
+    const areas = new Set<string>();
+    for (const f of info.files) {
+      const parts = f.split("/");
+      if (parts.length >= 2) areas.add(parts.slice(0, 2).join("/"));
+    }
+    // Also add components from their issues
+    for (const issueKey of info.issues) {
+      const iss = issues.find((i) => i.issueKey === issueKey);
+      if (iss) iss.components.forEach((c) => areas.add(c));
+    }
+    developerInsights.push({
+      developer: dev,
+      expertiseArea: Array.from(areas).slice(0, 3).join(", ") || "General",
+      notableCommits: info.commits.slice(0, 5),
+      recommendation:
+        info.issues.size >= 5
+          ? `${dev} is a key contributor (${info.issues.size} issues). Ensure knowledge sharing to reduce bus factor.`
+          : `${dev} contributed to ${info.issues.size} issue(s). Consider pairing for skill growth.`,
+    });
+  }
+  developerInsights.sort(
+    (a, b) => b.notableCommits.length - a.notableCommits.length,
+  );
+
+  // ── 6. AI recommendations ──
+  const aiRecommendations: CodeIntelRecommendation[] = [];
+  if (reusableComponents.length > 0) {
+    const top = reusableComponents[0];
+    aiRecommendations.push({
+      headline: `Consolidate "${top.componentName}" to reduce dev effort by ~${Math.min(30, top.relatedIssues.length * 8)}%`,
+      component: top.componentName,
+      action: top.recommendedUsage,
+      expectedBenefit: `Eliminates redundancy across ${top.relatedIssues.length} issues`,
+    });
+  }
+  if (duplicateDetection.length > 0) {
+    aiRecommendations.push({
+      headline: `${duplicateDetection.length} potential duplicate/overlap clusters detected`,
+      component: "Cross-cutting",
+      action: "Review flagged issue clusters for consolidation",
+      expectedBenefit: "Reduce wasted effort and improve delivery speed",
+    });
+  }
+  if (developerInsights.length > 0) {
+    const topDev = developerInsights[0];
+    aiRecommendations.push({
+      headline: `Distribute knowledge from ${topDev.developer} — single-point-of-failure risk`,
+      component: topDev.expertiseArea,
+      action: "Schedule pair programming or knowledge sharing sessions",
+      expectedBenefit: "Reduce bus factor and improve team resilience",
+    });
+  }
+  if (!hasDevInfo) {
+    aiRecommendations.push({
+      headline: "Enable GitHub integration for richer commit analysis",
+      component: "DevOps",
+      action:
+        "Link GitHub repositories to Jira via Development panel or Jira app",
+      expectedBenefit:
+        "Unlock file-level reusability analysis and commit tracking",
+    });
+  }
+
+  // ── Executive summary ──
+  const summaryParts: string[] = [];
+  summaryParts.push(
+    `Analyzed ${issues.length} recently resolved issues with ${totalCommits} linked commits and ${totalPRs} PRs.`,
+  );
+  if (reusableComponents.length > 0)
+    summaryParts.push(
+      `Found ${reusableComponents.length} potential reusable components/modules.`,
+    );
+  if (duplicateDetection.length > 0)
+    summaryParts.push(
+      `Detected ${duplicateDetection.length} overlap/duplication clusters requiring review.`,
+    );
+  if (!hasDevInfo)
+    summaryParts.push(
+      "No GitHub commit data available — analysis based on Jira metadata only.",
+    );
+
+  return {
+    executiveSummary: summaryParts.join(" "),
+    reusableComponents: reusableComponents.slice(0, 15),
+    recentImplementations: recentImplementations.slice(0, 20),
+    duplicateDetection: duplicateDetection.slice(0, 10),
+    aiRecommendations,
+    developerInsights: developerInsights.slice(0, 15),
+    totalIssuesAnalyzed: issues.length,
+    totalCommits,
+    totalPRs,
+    hasDevInfo,
+  };
+};
+
+function extractKeywords(issue: CodeIntelIssue): string[] {
+  const text = `${issue.summary} ${issue.description}`.toLowerCase();
+  const words = text
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 4);
+  const stopWords = new Set([
+    "should",
+    "would",
+    "could",
+    "about",
+    "their",
+    "there",
+    "which",
+    "where",
+    "being",
+    "after",
+    "before",
+    "while",
+    "these",
+    "those",
+    "other",
+    "shall",
+    "issue",
+    "please",
+    "update",
+    "added",
+    "fixed",
+  ]);
+  const keywords = [
+    ...words.filter((w) => !stopWords.has(w)),
+    ...issue.labels.map((l) => l.toLowerCase()),
+    ...issue.components.map((c) => c.toLowerCase()),
+  ];
+  return [...new Set(keywords)];
+}
+
+function inferArea(summary: string): string {
+  const lower = summary.toLowerCase();
+  const areas = [
+    "auth",
+    "login",
+    "search",
+    "payment",
+    "checkout",
+    "api",
+    "database",
+    "ui",
+    "frontend",
+    "backend",
+    "notification",
+    "email",
+    "report",
+    "dashboard",
+    "admin",
+    "user",
+    "config",
+    "setting",
+    "upload",
+    "import",
+    "export",
+    "integration",
+    "sync",
+    "cache",
+    "performance",
+    "security",
+  ];
+  return areas.find((a) => lower.includes(a)) || "General";
+}

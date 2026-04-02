@@ -41,6 +41,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     ).then(sendResponse);
     return true;
   }
+  if (message.type === "FETCH_DEV_INFO") {
+    fetchDevInfo(message.baseUrl, message.issueIds, message.authToken).then(
+      sendResponse,
+    );
+    return true;
+  }
 });
 
 function buildFetchOptions(authToken: string | null): RequestInit {
@@ -278,6 +284,7 @@ async function fetchJiraIssues(
       }
 
       return {
+        id: (issue.id as string) || "",
         key: issue.key,
         summary: fields.summary,
         status: (status?.name as string) || "Unknown",
@@ -462,4 +469,125 @@ async function runJqlQuery(
       error: `Network error: ${(err as Error).message}`,
     };
   }
+}
+
+// ── Fetch dev-status (linked commits/PRs) for a batch of issue IDs ────────
+async function fetchDevInfo(
+  baseUrl: string,
+  issueIds: string[],
+  authToken: string | null,
+) {
+  const opts = buildFetchOptions(authToken);
+  const results: Record<
+    string,
+    {
+      commits: {
+        id: string;
+        message: string;
+        author: string;
+        date: string;
+        url: string;
+        repo: string;
+        files: string[];
+      }[];
+      pullRequests: {
+        id: string;
+        title: string;
+        url: string;
+        status: string;
+        author: string;
+      }[];
+    }
+  > = {};
+
+  // Process in batches of 10 to avoid flooding
+  const BATCH = 10;
+  for (let i = 0; i < issueIds.length; i += BATCH) {
+    const batch = issueIds.slice(i, i + BATCH);
+    const batchResults = await Promise.all(
+      batch.map(async (issueId) => {
+        try {
+          const res = await fetch(
+            `${baseUrl}/rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=GitHub&dataType=repository`,
+            opts,
+          );
+          if (!res.ok) {
+            // Try fallback for Jira Server/DC
+            const res2 = await fetch(
+              `${baseUrl}/rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=stash&dataType=repository`,
+              opts,
+            );
+            if (!res2.ok) return { issueId, commits: [], pullRequests: [] };
+            const data2 = await res2.json();
+            return parseDevStatusResponse(issueId, data2);
+          }
+          const data = await res.json();
+          return parseDevStatusResponse(issueId, data);
+        } catch {
+          return { issueId, commits: [], pullRequests: [] };
+        }
+      }),
+    );
+    for (const r of batchResults) {
+      results[r.issueId] = { commits: r.commits, pullRequests: r.pullRequests };
+    }
+  }
+  return { success: true, devInfo: results };
+}
+
+function parseDevStatusResponse(
+  issueId: string,
+  data: Record<string, unknown>,
+) {
+  const commits: {
+    id: string;
+    message: string;
+    author: string;
+    date: string;
+    url: string;
+    repo: string;
+    files: string[];
+  }[] = [];
+  const pullRequests: {
+    id: string;
+    title: string;
+    url: string;
+    status: string;
+    author: string;
+  }[] = [];
+
+  const detail = data.detail as Record<string, unknown>[] | undefined;
+  if (Array.isArray(detail)) {
+    for (const repo of detail) {
+      const repoName =
+        (repo.name as string) || (repo.repository as string) || "";
+      const repoCommits = (repo.commits as Record<string, unknown>[]) || [];
+      for (const c of repoCommits) {
+        commits.push({
+          id: ((c.id as string) || "").substring(0, 12),
+          message: (c.message as string) || "",
+          author:
+            ((c.author as Record<string, unknown>)?.name as string) ||
+            (c.authorName as string) ||
+            "",
+          date: (c.authorTimestamp as string) || (c.date as string) || "",
+          url: (c.url as string) || "",
+          repo: repoName,
+          files: (c.files as string[]) || [],
+        });
+      }
+      const repoPRs = (repo.pullRequests as Record<string, unknown>[]) || [];
+      for (const pr of repoPRs) {
+        pullRequests.push({
+          id: String(pr.id || ""),
+          title: (pr.name as string) || (pr.title as string) || "",
+          url: (pr.url as string) || "",
+          status: (pr.status as string) || "",
+          author:
+            ((pr.author as Record<string, unknown>)?.name as string) || "",
+        });
+      }
+    }
+  }
+  return { issueId, commits, pullRequests };
 }

@@ -7,6 +7,7 @@ import {
   fetchProjects,
   fetchJiraIssues,
   fetchActiveSprint,
+  fetchDevInfo,
 } from "./services/jiraService";
 import { computeMetrics } from "./services/metricsService";
 import type {
@@ -236,6 +237,8 @@ export default function App() {
       store.setRecentlyResolved([]);
       store.setAgeingIssues([]);
       store.setOverburntIssues([]);
+      store.setEarlyCompletionIssues([]);
+      store.setCodeIntelIssues([]);
 
       showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
 
@@ -248,6 +251,8 @@ export default function App() {
         recentResolvedResult,
         ageingResult,
         overburntResult,
+        earlyCompletionResult,
+        codeIntelResult,
         sprintResult,
       ] = await Promise.all([
         fetchJiraIssues(
@@ -286,6 +291,18 @@ export default function App() {
           500,
           token,
         ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0 AND ${resolvedRangeClause} ORDER BY resolved DESC`,
+          500,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Task, Sub-task, Epic, Bug, Defect) AND ${resolvedRangeClause} ORDER BY resolved DESC`,
+          300,
+          token,
+        ),
         fetchActiveSprint(jiraUrl, projectKey, token),
       ]);
 
@@ -310,6 +327,67 @@ export default function App() {
       const overburntIssues = overburntResult.success
         ? overburntResult.issues || []
         : [];
+      const earlyCompletionIssues = earlyCompletionResult.success
+        ? earlyCompletionResult.issues || []
+        : [];
+      const codeIntelRawIssues = codeIntelResult.success
+        ? codeIntelResult.issues || []
+        : [];
+
+      // ── Enrich code intel issues with dev-status (commits/PRs) ──
+      const codeIntelIssueIds = codeIntelRawIssues
+        .filter((i) => i.id)
+        .map((i) => i.id);
+      let devInfoMap: Record<
+        string,
+        {
+          commits: {
+            id: string;
+            message: string;
+            author: string;
+            date: string;
+            url: string;
+            repo: string;
+            files: string[];
+          }[];
+          pullRequests: {
+            id: string;
+            title: string;
+            url: string;
+            status: string;
+            author: string;
+          }[];
+        }
+      > = {};
+      if (codeIntelIssueIds.length > 0) {
+        try {
+          const devResult = await fetchDevInfo(
+            jiraUrl,
+            codeIntelIssueIds,
+            token,
+          );
+          if (devResult.success && devResult.devInfo) {
+            devInfoMap = devResult.devInfo;
+          }
+        } catch {
+          // Dev info is optional — continue without it
+        }
+      }
+      const codeIntelIssues = codeIntelRawIssues.map((issue) => ({
+        issueId: issue.id || "",
+        issueKey: issue.key,
+        summary: issue.summary,
+        description: issue.description || "",
+        labels: issue.labels || [],
+        components: issue.components || [],
+        assignee: issue.assignee,
+        issueType: issue.issueType,
+        priority: issue.priority,
+        status: issue.status,
+        resolved: issue.resolved || null,
+        commits: devInfoMap[issue.id]?.commits || [],
+        pullRequests: devInfoMap[issue.id]?.pullRequests || [],
+      }));
 
       // Load snapshot for trends
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -331,6 +409,8 @@ export default function App() {
       store.setRecentlyResolved(recentlyResolved);
       store.setAgeingIssues(ageingIssues);
       store.setOverburntIssues(overburntIssues);
+      store.setEarlyCompletionIssues(earlyCompletionIssues);
+      store.setCodeIntelIssues(codeIntelIssues);
       store.setProjectDataLoaded(true);
       store.setSprintInfo(
         sprintResult.sprintName || "",

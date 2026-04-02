@@ -138,3 +138,47 @@ export async function runJqlQuery(
     error?: string;
   }>;
 }
+
+export interface DevCommit {
+  id: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+  repo: string;
+  files: string[];
+}
+
+export interface DevPullRequest {
+  id: string;
+  title: string;
+  url: string;
+  status: string;
+  author: string;
+}
+
+export interface DevInfo {
+  commits: DevCommit[];
+  pullRequests: DevPullRequest[];
+}
+
+export async function fetchDevInfo(
+  baseUrl: string,
+  issueIds: string[],
+  authToken: string | null,
+): Promise<{
+  success: boolean;
+  devInfo?: Record<string, DevInfo>;
+  error?: string;
+}> {
+  return sendMessage({
+    type: "FETCH_DEV_INFO",
+    baseUrl,
+    issueIds,
+    authToken,
+  }) as Promise<{
+    success: boolean;
+    devInfo?: Record<string, DevInfo>;
+    error?: string;
+  }>;
+}

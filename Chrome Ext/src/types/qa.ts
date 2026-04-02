@@ -341,6 +341,23 @@ export interface AIProjectAnalysis {
   timeRangeLabel: string;
 }
 
+export interface EarlyCompletionItem {
+  issue: QAIssue;
+  createdDate: string;
+  resolutionDate: string;
+  originalEstimateHours: number;
+  timeTakenHours: number;
+  timeSavedHours: number;
+}
+
+export interface EarlyCompletionAnalysis {
+  items: EarlyCompletionItem[];
+  totalEarlyItems: number;
+  totalDoneItems: number;
+  avgTimeSavedHours: number;
+  earlyCompletionPercentage: number;
+}
+
 export interface DashboardFilters {
   dateRange: [string, string] | null;
   severity: Priority[];
@@ -356,4 +373,91 @@ export interface ThemeConfig {
   isDark: boolean;
   primaryColor: string;
   cssVars: Record<string, string>;
+}
+
+// ── Code Intelligence types ──────────────────────────────────────────────
+export interface LinkedCommit {
+  id: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+  repo: string;
+  files: string[];
+}
+
+export interface LinkedPR {
+  id: string;
+  title: string;
+  url: string;
+  status: string;
+  author: string;
+}
+
+export interface CodeIntelIssue {
+  issueId: string;
+  issueKey: string;
+  summary: string;
+  description: string;
+  labels: string[];
+  components: string[];
+  assignee: string;
+  issueType: string;
+  priority: string;
+  status: string;
+  resolved: string | null;
+  commits: LinkedCommit[];
+  pullRequests: LinkedPR[];
+}
+
+export interface ReusableComponent {
+  componentName: string;
+  description: string;
+  relatedIssues: string[];
+  relevantCommits: { commitId: string; url: string; summary: string }[];
+  reusabilityScore: "High" | "Medium" | "Low";
+  recommendedUsage: string;
+}
+
+export interface RecentImplementation {
+  featureArea: string;
+  issueId: string;
+  commitId: string;
+  url: string;
+  description: string;
+  filesImpacted: string[];
+}
+
+export interface DuplicateDetection {
+  issueIds: string[];
+  similarityReason: string;
+  risk: string;
+  recommendation: string;
+}
+
+export interface DeveloperInsight {
+  developer: string;
+  expertiseArea: string;
+  notableCommits: string[];
+  recommendation: string;
+}
+
+export interface CodeIntelRecommendation {
+  headline: string;
+  component: string;
+  action: string;
+  expectedBenefit: string;
+}
+
+export interface CodeIntelAnalysis {
+  executiveSummary: string;
+  reusableComponents: ReusableComponent[];
+  recentImplementations: RecentImplementation[];
+  duplicateDetection: DuplicateDetection[];
+  aiRecommendations: CodeIntelRecommendation[];
+  developerInsights: DeveloperInsight[];
+  totalIssuesAnalyzed: number;
+  totalCommits: number;
+  totalPRs: number;
+  hasDevInfo: boolean;
 }

@@ -348,13 +348,16 @@ export interface EarlyCompletionItem {
   originalEstimateHours: number;
   timeTakenHours: number;
   timeSavedHours: number;
+  differencePercent: number;
 }
 
 export interface EarlyCompletionAnalysis {
   items: EarlyCompletionItem[];
   totalEarlyItems: number;
   totalDoneItems: number;
+  totalIssuesAnalyzed: number;
   avgTimeSavedHours: number;
+  avgPercentSaved: number;
   earlyCompletionPercentage: number;
 }
 
@@ -414,7 +417,12 @@ export interface ReusableComponent {
   componentName: string;
   description: string;
   relatedIssues: string[];
-  relevantCommits: { commitId: string; url: string; summary: string }[];
+  relevantCommits: {
+    commitId: string;
+    githubUrl: string;
+    url: string;
+    summary: string;
+  }[];
   reusabilityScore: "High" | "Medium" | "Low";
   recommendedUsage: string;
 }
@@ -422,6 +430,7 @@ export interface ReusableComponent {
 export interface RecentImplementation {
   featureArea: string;
   issueId: string;
+  issueType: string;
   commitId: string;
   url: string;
   description: string;
@@ -430,6 +439,7 @@ export interface RecentImplementation {
 
 export interface DuplicateDetection {
   issueIds: string[];
+  issueTypes: string[];
   similarityReason: string;
   risk: string;
   recommendation: string;
@@ -445,13 +455,14 @@ export interface DeveloperInsight {
 export interface CodeIntelRecommendation {
   headline: string;
   component: string;
+  mappedModule: string;
   action: string;
   expectedBenefit: string;
 }
 
 export interface CodeIntelAnalysis {
   executiveSummary: string;
-  reusableComponents: ReusableComponent[];
+  reusableComponents: Record<string, ReusableComponent[]>;
   recentImplementations: RecentImplementation[];
   duplicateDetection: DuplicateDetection[];
   aiRecommendations: CodeIntelRecommendation[];
@@ -460,4 +471,5 @@ export interface CodeIntelAnalysis {
   totalCommits: number;
   totalPRs: number;
   hasDevInfo: boolean;
+  totalReusableCount: number;
 }

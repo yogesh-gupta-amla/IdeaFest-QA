@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Card, Table, Tag, Empty, Collapse, Tooltip } from "antd";
+import { Card, Table, Tag, Empty, Collapse, Tooltip, Select } from "antd";
 import {
   CodeOutlined,
   BranchesOutlined,
@@ -9,6 +9,7 @@ import {
   LinkOutlined,
   GithubOutlined,
   PullRequestOutlined,
+  AppstoreOutlined,
 } from "@ant-design/icons";
 import { useCodeIntelligence } from "../../hooks/useQAData";
 import type {
@@ -55,11 +56,13 @@ const CodeIntelligence: React.FC = () => {
     );
   }
 
+  const pageCount = Object.keys(data.reusableComponents).length;
+
   const tabs = [
     {
       key: "reusable" as const,
       label: "🔁 Reusable Components",
-      count: data.reusableComponents.length,
+      count: data.totalReusableCount,
     },
     {
       key: "recent" as const,
@@ -89,13 +92,13 @@ const CodeIntelligence: React.FC = () => {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
           gap: 12,
         }}
       >
         <SummaryCard
           icon={<CodeOutlined />}
-          label="Issues Analyzed"
+          label="Stories & Epics Analyzed"
           value={data.totalIssuesAnalyzed}
           color="#6366f1"
         />
@@ -112,9 +115,15 @@ const CodeIntelligence: React.FC = () => {
           color="#3b82f6"
         />
         <SummaryCard
+          icon={<AppstoreOutlined />}
+          label="Page / Module Areas"
+          value={pageCount}
+          color="#8b5cf6"
+        />
+        <SummaryCard
           icon={<BranchesOutlined />}
           label="Reusable Modules"
-          value={data.reusableComponents.length}
+          value={data.totalReusableCount}
           color="#f59e0b"
         />
         <SummaryCard
@@ -127,7 +136,7 @@ const CodeIntelligence: React.FC = () => {
           icon={<TeamOutlined />}
           label="Contributors"
           value={data.developerInsights.length}
-          color="#8b5cf6"
+          color="#06b6d4"
         />
       </div>
 
@@ -226,7 +235,7 @@ const CodeIntelligence: React.FC = () => {
 
       {/* Tab Content */}
       {activeTab === "reusable" && (
-        <ReusableComponentsTab items={data.reusableComponents} />
+        <ReusableComponentsTab grouped={data.reusableComponents} />
       )}
       {activeTab === "recent" && (
         <RecentImplementationsTab items={data.recentImplementations} />
@@ -273,11 +282,31 @@ const SummaryCard: React.FC<{
   </Card>
 );
 
-// ── Reusable Components Tab ──────────────────────────────────────────────────
-const ReusableComponentsTab: React.FC<{ items: ReusableComponent[] }> = ({
-  items,
-}) => {
-  if (items.length === 0)
+// ── Reusable Components Tab (Grouped by Page/Module) ─────────────────────────
+const PAGE_ICONS: Record<string, string> = {
+  "Home Page": "🏠",
+  PLP: "📋",
+  PDP: "📦",
+  Cart: "🛒",
+  Checkout: "🧾",
+  Payment: "💳",
+  Authentication: "🔒",
+  "My Account": "👤",
+  Navigation: "🧭",
+  Search: "🔍",
+  "API / Backend": "⚙️",
+  Performance: "⚡",
+  Notifications: "🔔",
+  "Admin / CMS": "🛠️",
+};
+
+const ReusableComponentsTab: React.FC<{
+  grouped: Record<string, ReusableComponent[]>;
+}> = ({ grouped }) => {
+  const pages = Object.keys(grouped);
+  const [selectedPage, setSelectedPage] = useState<string>("all");
+
+  if (pages.length === 0)
     return (
       <Empty
         description="No reusable components detected"
@@ -285,99 +314,182 @@ const ReusableComponentsTab: React.FC<{ items: ReusableComponent[] }> = ({
       />
     );
 
+  const visiblePages =
+    selectedPage === "all" ? pages : pages.filter((p) => p === selectedPage);
+
   return (
-    <Collapse
-      accordion
-      ghost
-      style={{
-        background: "var(--qa-bg-card)",
-        borderRadius: 10,
-        border: "1px solid var(--qa-border)",
-      }}
-    >
-      {items.map((item, idx) => (
-        <Panel
-          key={idx}
-          header={
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Page filter */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--qa-text-muted)",
+          }}
+        >
+          Filter by Page/Module:
+        </span>
+        <Select
+          value={selectedPage}
+          onChange={setSelectedPage}
+          style={{ minWidth: 200 }}
+          size="small"
+        >
+          <Select.Option value="all">All Pages ({pages.length})</Select.Option>
+          {pages.map((p) => (
+            <Select.Option key={p} value={p}>
+              {PAGE_ICONS[p] || "📁"} {p} ({grouped[p].length})
+            </Select.Option>
+          ))}
+        </Select>
+      </div>
+
+      {/* Page sections */}
+      {visiblePages.map((page) => (
+        <Card
+          key={page}
+          size="small"
+          title={
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Tag color={SCORE_COLORS[item.reusabilityScore]}>
-                {item.reusabilityScore}
-              </Tag>
+              <span style={{ fontSize: 18 }}>{PAGE_ICONS[page] || "📁"}</span>
               <span
-                style={{ fontWeight: 600, color: "var(--qa-text-primary)" }}
+                style={{ fontWeight: 700, color: "var(--qa-text-primary)" }}
               >
-                {item.componentName}
+                {page}
               </span>
-              <span style={{ color: "var(--qa-text-muted)", fontSize: 12 }}>
-                ({item.relatedIssues.length} issues)
-              </span>
+              <Tag
+                style={{
+                  background: "var(--qa-bg-primary)",
+                  border: "1px solid var(--qa-border)",
+                  fontSize: 11,
+                }}
+              >
+                {grouped[page].length} component
+                {grouped[page].length > 1 ? "s" : ""}
+              </Tag>
             </div>
           }
+          style={{
+            background: "var(--qa-bg-card)",
+            border: "1px solid var(--qa-border)",
+            borderRadius: 10,
+          }}
+          headStyle={{
+            background: "var(--qa-bg-primary)",
+            borderBottom: "1px solid var(--qa-border)",
+          }}
         >
-          <div
-            style={{
-              fontSize: 13,
-              color: "var(--qa-text-secondary)",
-              marginBottom: 10,
-            }}
-          >
-            {item.description}
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <strong style={{ color: "var(--qa-text-primary)", fontSize: 12 }}>
-              Related Issues:
-            </strong>{" "}
-            {item.relatedIssues.map((k) => (
-              <Tag key={k} style={{ marginBottom: 4 }}>
-                {k}
-              </Tag>
-            ))}
-          </div>
-          {item.relevantCommits.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <strong style={{ color: "var(--qa-text-primary)", fontSize: 12 }}>
-                Commits:
-              </strong>
-              {item.relevantCommits.map((c, ci) => (
+          <Collapse accordion ghost>
+            {grouped[page].map((item, idx) => (
+              <Panel
+                key={idx}
+                header={
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <Tag color={SCORE_COLORS[item.reusabilityScore]}>
+                      {item.reusabilityScore}
+                    </Tag>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--qa-text-primary)",
+                      }}
+                    >
+                      {item.componentName}
+                    </span>
+                    <span
+                      style={{ color: "var(--qa-text-muted)", fontSize: 12 }}
+                    >
+                      ({item.relatedIssues.length} issues)
+                    </span>
+                  </div>
+                }
+              >
                 <div
-                  key={ci}
                   style={{
-                    fontSize: 12,
+                    fontSize: 13,
                     color: "var(--qa-text-secondary)",
-                    marginLeft: 8,
-                    marginTop: 2,
+                    marginBottom: 10,
                   }}
                 >
-                  <code style={{ color: "#6366f1" }}>{c.commitId}</code>{" "}
-                  {c.summary}
-                  {c.url && (
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ marginLeft: 6 }}
-                    >
-                      <LinkOutlined />
-                    </a>
-                  )}
+                  {item.description}
                 </div>
-              ))}
-            </div>
-          )}
-          <div
-            style={{
-              padding: "8px 12px",
-              background: "rgba(34,197,94,0.08)",
-              borderRadius: 6,
-              fontSize: 12,
-              color: "#22c55e",
-            }}
-          >
-            💡 {item.recommendedUsage}
-          </div>
-        </Panel>
+                <div style={{ marginBottom: 8 }}>
+                  <strong
+                    style={{ color: "var(--qa-text-primary)", fontSize: 12 }}
+                  >
+                    Related Issues:
+                  </strong>{" "}
+                  {item.relatedIssues.map((k) => (
+                    <Tag key={k} style={{ marginBottom: 4 }}>
+                      {k}
+                    </Tag>
+                  ))}
+                </div>
+                {item.relevantCommits.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <strong
+                      style={{ color: "var(--qa-text-primary)", fontSize: 12 }}
+                    >
+                      Commits:
+                    </strong>
+                    {item.relevantCommits.map((c, ci) => (
+                      <div
+                        key={ci}
+                        style={{
+                          fontSize: 12,
+                          color: "var(--qa-text-secondary)",
+                          marginLeft: 8,
+                          marginTop: 2,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <code style={{ color: "#6366f1" }}>
+                          {c.commitId.substring(0, 8)}
+                        </code>
+                        <span>{c.summary}</span>
+                        {(c.githubUrl || c.url) && (
+                          <a
+                            href={c.githubUrl || c.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: "#3b82f6", marginLeft: 4 }}
+                          >
+                            <GithubOutlined /> View
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    background: "rgba(34,197,94,0.08)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "#22c55e",
+                  }}
+                >
+                  💡 {item.recommendedUsage}
+                </div>
+              </Panel>
+            ))}
+          </Collapse>
+        </Card>
       ))}
-    </Collapse>
+    </div>
   );
 };
 
@@ -404,6 +516,21 @@ const RecentImplementationsTab: React.FC<{ items: RecentImplementation[] }> = ({
       ),
     },
     {
+      title: "Type",
+      dataIndex: "issueType",
+      key: "issueType",
+      width: 80,
+      render: (v: string) => (
+        <Tag color={v === "Epic" ? "purple" : "blue"}>{v}</Tag>
+      ),
+      filters: [
+        { text: "Story", value: "Story" },
+        { text: "Epic", value: "Epic" },
+      ],
+      onFilter: (value: unknown, record: RecentImplementation) =>
+        record.issueType === value,
+    },
+    {
       title: "Feature Area",
       dataIndex: "featureArea",
       key: "featureArea",
@@ -420,18 +547,24 @@ const RecentImplementationsTab: React.FC<{ items: RecentImplementation[] }> = ({
       title: "Commit",
       dataIndex: "commitId",
       key: "commitId",
-      width: 120,
+      width: 140,
       render: (v: string, row: RecentImplementation) =>
         v ? (
           <Tooltip title={v}>
-            <a
-              href={row.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontFamily: "monospace", fontSize: 12 }}
-            >
-              {v.substring(0, 8)}… <LinkOutlined />
-            </a>
+            {row.url ? (
+              <a
+                href={row.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              >
+                {v.substring(0, 8)}… <GithubOutlined />
+              </a>
+            ) : (
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+                {v.substring(0, 8)}…
+              </span>
+            )}
           </Tooltip>
         ) : (
           <span style={{ color: "var(--qa-text-muted)", fontSize: 12 }}>
@@ -499,9 +632,10 @@ const DuplicateDetectionTab: React.FC<{ items: DuplicateDetection[] }> = ({
             />
             <div style={{ flex: 1 }}>
               <div style={{ marginBottom: 6 }}>
-                {item.issueIds.map((k) => (
+                {item.issueIds.map((k, ki) => (
                   <Tag key={k} color="orange" style={{ marginBottom: 4 }}>
                     {k}
+                    {item.issueTypes?.[ki] ? ` (${item.issueTypes[ki]})` : ""}
                   </Tag>
                 ))}
               </div>
@@ -655,12 +789,19 @@ const RecommendationsTab: React.FC<{ items: CodeIntelRecommendation[] }> = ({
                   gap: 16,
                   fontSize: 12,
                   marginBottom: 6,
+                  flexWrap: "wrap",
                 }}
               >
                 <span>
                   <strong>Component:</strong>{" "}
                   <Tag color="blue">{item.component}</Tag>
                 </span>
+                {item.mappedModule && (
+                  <span>
+                    <strong>Module:</strong>{" "}
+                    <Tag color="purple">{item.mappedModule}</Tag>
+                  </span>
+                )}
               </div>
               <div
                 style={{

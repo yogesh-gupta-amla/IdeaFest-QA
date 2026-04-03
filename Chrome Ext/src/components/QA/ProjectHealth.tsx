@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { useProjectHealth } from "../../hooks/useQAData";
 import { useDashboardStore } from "../../store/useStore";
-import { calculateHealth } from "../../services/metricsService";
+import type { QueryTimeRange, DateRange } from "../../utils/queryTimeRange";
 import GaugeChart from "../Charts/GaugeChart";
 import ChartCard from "../Charts/ChartCard";
 import { exportDashboardToPDF } from "../../utils/exportUtils";
@@ -48,12 +48,6 @@ const HEALTH_COLORS: Record<string, string> = {
   red: "#ff4d4f",
 };
 
-const HEALTH_LABELS: Record<string, string> = {
-  green: "🟢 GREEN — Healthy",
-  yellow: "🟡 YELLOW — At Risk",
-  red: "🔴 RED — Critical",
-};
-
 // ─── AI Prompt Analysis Helpers ───────────────────────────────────────────────
 
 const EXCLUDED_STATUSES = [
@@ -69,6 +63,26 @@ const EXCLUDED_STATUSES = [
 const NORMALIZED_EXCLUDED_STATUSES = new Set(
   EXCLUDED_STATUSES.map((status) => status.trim().toLowerCase()),
 );
+
+/** Normalize Jira priority names to canonical values.
+ *  Jira instances may use "Highest" instead of "Blocker", etc. */
+function normalizePriority(p: string): string {
+  const low = (p || "").trim().toLowerCase();
+  if (low === "blocker" || low === "highest") return "Blocker";
+  if (low === "critical") return "Critical";
+  if (low === "high") return "High";
+  if (low === "low" || low === "lowest" || low === "trivial" || low === "minor")
+    return "Low";
+  return "Medium";
+}
+
+/** Pre-normalize priority on a set of JiraIssues so all downstream
+ *  comparisons work regardless of the Jira instance's priority scheme. */
+function withNormalizedPriority<T extends { priority: string }>(
+  issues: T[],
+): T[] {
+  return issues.map((i) => ({ ...i, priority: normalizePriority(i.priority) }));
+}
 
 function filterActiveBugs(issues: JiraIssue[]) {
   return issues.filter(
@@ -123,20 +137,40 @@ function dedupeIssues(...groups: JiraIssue[][]): JiraIssue[] {
   return Array.from(issueMap.values());
 }
 
-function getDateRange(timeRange: "today" | "weekly"): {
+function getDateRange(timeRange: QueryTimeRange): {
   start: Date;
   end: Date;
 } {
   const now = new Date();
-  if (timeRange === "weekly") {
-    const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  if (timeRange === "oneday") {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
     return { start, end: now };
   }
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
+  if (timeRange === "lastweek") {
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const thisMon = new Date(now);
+    thisMon.setDate(now.getDate() + diff);
+    const lastMon = new Date(thisMon);
+    lastMon.setDate(thisMon.getDate() - 7);
+    lastMon.setHours(0, 0, 0, 0);
+    const lastSun = new Date(thisMon);
+    lastSun.setDate(thisMon.getDate() - 1);
+    lastSun.setHours(23, 59, 59, 999);
+    return { start: lastMon, end: lastSun };
+  }
+  if (timeRange === "thisweek") {
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(now);
+    mon.setDate(now.getDate() + diff);
+    mon.setHours(0, 0, 0, 0);
+    return { start: mon, end: now };
+  }
+  // all — go back far enough to cover everything
+  const start = new Date(2000, 0, 1);
+  return { start, end: now };
 }
 
 interface AIHealthAnalysis {
@@ -180,14 +214,26 @@ function analyzeHealthData(
   rawIssues: JiraIssue[],
   periodCreatedIssues: JiraIssue[],
   recentlyResolvedIssues: JiraIssue[],
-  timeRange: "today" | "weekly",
+  timeRange: QueryTimeRange,
+  ageingIssues?: JiraIssue[],
+  activeIssues?: JiraIssue[],
 ): AIHealthAnalysis {
   const { start, end } = getDateRange(timeRange);
-  const activeBugs = filterActiveBugs(rawIssues);
+  // Normalize priorities upfront so "Highest" → "Blocker", etc.
+  const normalizedRaw = withNormalizedPriority(rawIssues);
+  const normalizedCreated = withNormalizedPriority(periodCreatedIssues);
+  const normalizedResolved = withNormalizedPriority(recentlyResolvedIssues);
+  const normalizedAgeing = ageingIssues
+    ? withNormalizedPriority(ageingIssues)
+    : [];
+  // Use dedicated active-issues JQL dataset when available; fallback to client-side filter
+  const activeBugs = activeIssues
+    ? withNormalizedPriority(activeIssues)
+    : filterActiveBugs(normalizedRaw);
   const velocitySource = dedupeIssues(
-    rawIssues,
-    periodCreatedIssues,
-    recentlyResolvedIssues,
+    normalizedRaw,
+    normalizedCreated,
+    normalizedResolved,
   );
 
   // Three JQL categories (client-side)
@@ -200,7 +246,7 @@ function analyzeHealthData(
   ).length;
 
   // Issues created within the selected period (any type = Bug/Defect)
-  const issuesInPeriod = periodCreatedIssues.filter((i) => {
+  const issuesInPeriod = normalizedCreated.filter((i) => {
     const created = new Date(i.created);
     return (
       created >= start &&
@@ -211,25 +257,30 @@ function analyzeHealthData(
 
   const total = issuesInPeriod.length;
 
-  // Priority map
+  // Priority map (from period-created issues)
   const priorityMap: Record<string, number> = {};
   issuesInPeriod.forEach((i) => {
     priorityMap[i.priority] = (priorityMap[i.priority] || 0) + 1;
   });
 
+  // Use ageing dataset (canonical lifetime Critical/Blocker query) when available
+  // This syncs the count with the Ageing Analysis tab
   const blockerCriticalCount =
-    (priorityMap["Blocker"] ?? 0) + (priorityMap["Critical"] ?? 0);
+    normalizedAgeing.length > 0
+      ? normalizedAgeing.length
+      : (priorityMap["Blocker"] ?? 0) + (priorityMap["Critical"] ?? 0);
   const highSeverityRatio = total > 0 ? blockerCriticalCount / total : 0;
-  const highSeveritySpike = highSeverityRatio > 0.4;
+  const highSeveritySpike = total > 0 && highSeverityRatio > 0.4;
 
-  // RED area distribution should focus on the high-severity issues driving risk.
-  const highSeverityIssuesInPeriod = issuesInPeriod.filter(
-    (i) => i.priority === "Blocker" || i.priority === "Critical",
-  );
+  // RED area distribution — use ageing issues (same as Ageing tab) when available
+  const highSeveritySource =
+    normalizedAgeing.length > 0
+      ? normalizedAgeing
+      : issuesInPeriod.filter(
+          (i) => i.priority === "Blocker" || i.priority === "Critical",
+        );
   const redAreaSource =
-    highSeverityIssuesInPeriod.length > 0
-      ? highSeverityIssuesInPeriod
-      : issuesInPeriod;
+    highSeveritySource.length > 0 ? highSeveritySource : issuesInPeriod;
 
   // Component distribution
   const componentMap: Record<string, number> = {};
@@ -366,7 +417,7 @@ function analyzeHealthData(
       `✅ Set up automated alerts for Blocker/Critical spike detection to enable faster response.`,
     );
 
-  // Per-period breakdown
+  // Per-period breakdown: always daily bars, derived from date range
   const periodsData: Array<{
     date: string;
     total: number;
@@ -382,21 +433,32 @@ function analyzeHealthData(
     }>;
   }> = [];
 
-  if (timeRange === "weekly") {
-    for (let i = 6; i >= 0; i--) {
-      const day = new Date();
-      day.setDate(day.getDate() - i);
-      day.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(day);
+  {
+    // Build daily buckets from start to end
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    const endDay = new Date(end);
+    endDay.setHours(23, 59, 59, 999);
+    // Cap at 90 days to avoid giant charts for lifetime
+    const maxDays = 90;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const totalDays = Math.ceil((endDay.getTime() - cursor.getTime()) / dayMs);
+    if (totalDays > maxDays) {
+      cursor.setTime(endDay.getTime() - maxDays * dayMs);
+      cursor.setHours(0, 0, 0, 0);
+    }
+    while (cursor <= endDay) {
+      const dayStart = new Date(cursor);
+      const dayEnd = new Date(cursor);
       dayEnd.setHours(23, 59, 59, 999);
-      const label = day.toLocaleDateString("en-US", {
+      const label = dayStart.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
       });
-      const dayIssues = rawIssues.filter((iss) => {
+      const dayIssues = normalizedRaw.filter((iss) => {
         if (!["Bug", "Defect"].includes(iss.issueType)) return false;
         const t = new Date(iss.created).getTime();
-        return t >= day.getTime() && t <= dayEnd.getTime();
+        return t >= dayStart.getTime() && t <= dayEnd.getTime();
       });
       periodsData.push({
         date: label,
@@ -412,35 +474,7 @@ function analyzeHealthData(
           status: i.status,
         })),
       });
-    }
-  } else {
-    for (let h = 0; h < 24; h++) {
-      const hourStart = new Date(start);
-      hourStart.setHours(h, 0, 0, 0);
-      const hourEnd = new Date(start);
-      hourEnd.setHours(h, 59, 59, 999);
-      const label = `${String(h).padStart(2, "0")}:00`;
-      const hourIssues = rawIssues.filter((iss) => {
-        if (!["Bug", "Defect"].includes(iss.issueType)) return false;
-        const t = new Date(iss.created).getTime();
-        return t >= hourStart.getTime() && t <= hourEnd.getTime();
-      });
-      if (hourIssues.length > 0) {
-        periodsData.push({
-          date: label,
-          total: hourIssues.length,
-          blocker: hourIssues.filter((i) => i.priority === "Blocker").length,
-          critical: hourIssues.filter((i) => i.priority === "Critical").length,
-          high: hourIssues.filter((i) => i.priority === "High").length,
-          issues: hourIssues.map((i) => ({
-            key: i.key,
-            summary: i.summary,
-            assignee: i.assignee || "Unassigned",
-            priority: i.priority,
-            status: i.status,
-          })),
-        });
-      }
+      cursor.setDate(cursor.getDate() + 1);
     }
   }
 
@@ -472,10 +506,13 @@ function analyzeHealthData(
 // ─── Main Component ───────────────────────────────────────────────────────────
 const ProjectHealth: React.FC = () => {
   const { data: health, isLoading, error } = useProjectHealth();
-  const projectMetrics = useDashboardStore((s) => s.projectMetrics);
   const rawIssues = useDashboardStore((s) => s.rawIssues);
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
+  const ageingIssues = useDashboardStore((s) => s.ageingIssues);
+  const activeIssues = useDashboardStore((s) => s.activeIssues);
   const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
+  const dateRange = useDashboardStore((s) => s.dateRange);
+  const projectMetrics = useDashboardStore((s) => s.projectMetrics);
   const periodCreatedIssues = projectMetrics?.todayCreated ?? [];
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
 
@@ -486,13 +523,37 @@ const ProjectHealth: React.FC = () => {
         periodCreatedIssues,
         recentlyResolved,
         queryTimeRange,
+        ageingIssues,
+        activeIssues,
       ),
-    [periodCreatedIssues, queryTimeRange, rawIssues, recentlyResolved],
+    [
+      periodCreatedIssues,
+      queryTimeRange,
+      rawIssues,
+      recentlyResolved,
+      ageingIssues,
+      activeIssues,
+    ],
   );
 
-  const overviewHealth = projectMetrics
-    ? calculateHealth(projectMetrics)
-    : null;
+  // ── Single source of truth for health ──────────────────────────────
+  // Derive everything from the AI analysis so the banner, gauge, and
+  // analysis panel are always consistent.
+  const healthLevel: "green" | "yellow" | "red" =
+    analysis.healthStatus === "GREEN" ? "green" : "yellow";
+
+  // Build a 0-100 gauge score from the AI analysis triggers.
+  // Start at 85 and deduct for each fired risk condition.
+  const gaugeScore = useMemo(() => {
+    let score = 85;
+    if (analysis.highSeveritySpike) score -= 25;
+    if (analysis.unitLevelHigh) score -= 15;
+    if (analysis.qaVelocityLow) score -= 15;
+    if (analysis.productSideCount > 5) score -= 10;
+    if (analysis.throughput === "Low") score -= 10;
+    else if (analysis.throughput === "Medium") score -= 5;
+    return Math.max(0, Math.min(100, score));
+  }, [analysis]);
 
   if (isLoading)
     return (
@@ -510,10 +571,8 @@ const ProjectHealth: React.FC = () => {
   if (error || !health)
     return <Alert type="error" message="Failed to load health data" />;
 
-  const healthLevel =
-    overviewHealth?.health ?? (health.status === "RED" ? "red" : "green");
   const statusColor = HEALTH_COLORS[healthLevel] ?? "#52c41a";
-  const isRed = healthLevel === "red";
+  const isOrange = analysis.healthStatus === "ORANGE";
 
   return (
     <div>
@@ -546,7 +605,7 @@ const ProjectHealth: React.FC = () => {
               boxShadow: `0 0 20px ${statusColor}60`,
             }}
           >
-            {isRed ? (
+            {isOrange ? (
               <WarningOutlined style={{ color: "#fff" }} />
             ) : (
               <CheckCircleOutlined style={{ color: "#fff" }} />
@@ -554,53 +613,20 @@ const ProjectHealth: React.FC = () => {
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 20, color: statusColor }}>
-              {HEALTH_LABELS[healthLevel]}
+              {analysis.healthStatus === "GREEN"
+                ? "🟢 GREEN — Healthy"
+                : "🟠 ORANGE — At Risk"}
             </div>
-            {overviewHealth ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                  marginTop: 6,
-                }}
-              >
-                {overviewHealth.reasons.map((r, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      background:
-                        r.type === "danger"
-                          ? "rgba(255,77,79,0.15)"
-                          : r.type === "warning"
-                            ? "rgba(250,173,20,0.15)"
-                            : "rgba(82,196,26,0.15)",
-                      color:
-                        r.type === "danger"
-                          ? "#ff4d4f"
-                          : r.type === "warning"
-                            ? "#faad14"
-                            : "#52c41a",
-                    }}
-                  >
-                    {r.text}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div
-                style={{
-                  color: "var(--qa-text-secondary)",
-                  fontSize: 13,
-                  maxWidth: 600,
-                }}
-              >
-                {health.summary}
-              </div>
-            )}
+            <div
+              style={{
+                color: "var(--qa-text-secondary)",
+                fontSize: 13,
+                maxWidth: 700,
+                marginTop: 4,
+              }}
+            >
+              {analysis.healthReason || "No major risks detected."}
+            </div>
           </div>
         </div>
         <Button
@@ -684,7 +710,11 @@ const ProjectHealth: React.FC = () => {
         {/* Gauge */}
         <Col xs={24} md={8}>
           <ChartCard title="Health Score" id="gauge-chart" height={200}>
-            <GaugeChart value={health.score} label="Health Score" />
+            <GaugeChart
+              value={gaugeScore}
+              label="Health Score"
+              color={statusColor}
+            />
           </ChartCard>
         </Col>
 
@@ -867,9 +897,13 @@ const ProjectHealth: React.FC = () => {
           <>
             <ChartCard
               title={
-                queryTimeRange === "weekly"
-                  ? "Daily Bug Creation — Last 7 Days"
-                  : "Hourly Bug Creation — Today"
+                queryTimeRange === "oneday"
+                  ? "Hourly Bug Creation — Today"
+                  : queryTimeRange === "thisweek"
+                    ? "Daily Bug Creation — This Week"
+                    : queryTimeRange === "lastweek"
+                      ? "Daily Bug Creation — Last Week"
+                      : "Daily Bug Creation — All Time (last 90 days)"
               }
               id="ai-period-chart"
               height={220}
@@ -1502,11 +1536,7 @@ const ProjectHealth: React.FC = () => {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ color: statusColor, fontSize: 16 }}>
-                  {healthLevel === "green"
-                    ? "✅"
-                    : healthLevel === "yellow"
-                      ? "⚠️"
-                      : "🔴"}
+                  {analysis.healthStatus === "GREEN" ? "✅" : "⚠️"}
                 </span>
                 <span
                   style={{ color: "var(--qa-text-secondary)", fontSize: 13 }}

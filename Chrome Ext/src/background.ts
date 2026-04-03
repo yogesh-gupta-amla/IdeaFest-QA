@@ -47,6 +47,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     );
     return true;
   }
+  if (message.type === "FETCH_JIRA_PAGE") {
+    fetchJiraPage(
+      message.baseUrl,
+      message.jql,
+      message.startAt || 0,
+      message.pageSize || 100,
+      message.authToken,
+    ).then(sendResponse);
+    return true;
+  }
 });
 
 function buildFetchOptions(authToken: string | null): RequestInit {
@@ -206,9 +216,11 @@ async function fetchJiraIssues(
     const fetchOpts: RequestInit = { method: "GET", headers };
     if (!authToken) fetchOpts.credentials = "include";
 
-    // Paginate through all results (cap at 2000 to prevent runaway)
-    const PAGE_SIZE = Math.min(maxResults, 100);
-    const CAP = maxResults;
+    // Paginate through all results
+    // maxResults <= 0 means "fetch ALL pages" (no cap)
+    const fetchAll = maxResults <= 0;
+    const PAGE_SIZE = fetchAll ? 100 : Math.min(maxResults, 100);
+    const CAP = fetchAll ? Infinity : maxResults;
     let startAt = 0;
     let totalAvailable = Infinity;
     const allRawIssues: Record<string, unknown>[] = [];
@@ -357,6 +369,198 @@ async function fetchJiraIssues(
       };
     });
     return { success: true, total: totalAvailable, issues };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: `Network error: ${(err as Error).message}`,
+    };
+  }
+}
+
+/**
+ * Fetch a single page of Jira issues.
+ * Returns { issues, total, startAt, isLast } so the caller can loop until isLast === true.
+ */
+async function fetchJiraPage(
+  baseUrl: string,
+  jql: string,
+  startAt: number,
+  pageSize: number,
+  authToken: string | null,
+) {
+  try {
+    const fields = [
+      "summary",
+      "status",
+      "updated",
+      "created",
+      "priority",
+      "assignee",
+      "issuetype",
+      "project",
+      "resolution",
+      "labels",
+      "components",
+      "reporter",
+      "timeoriginalestimate",
+      "aggregatetimespent",
+      "resolutiondate",
+      "parent",
+      "customfield_10016",
+      "customfield_10020",
+      "duedate",
+      "description",
+      "comment",
+      "worklog",
+      "workratio",
+    ].join(",");
+
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (authToken) headers["Authorization"] = `Basic ${authToken}`;
+    const fetchOpts: RequestInit = { method: "GET", headers };
+    if (!authToken) fetchOpts.credentials = "include";
+
+    const params = new URLSearchParams({
+      jql,
+      maxResults: String(pageSize),
+      fields,
+      expand: "changelog",
+      startAt: String(startAt),
+    });
+    const res = await fetch(
+      `${baseUrl}/rest/api/3/search/jql?${params}`,
+      fetchOpts,
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        success: false,
+        error: `Jira API error (${res.status}): ${text.substring(0, 200)}`,
+      };
+    }
+    const data = await res.json();
+    const total = data.total ?? 0;
+    const rawIssues: Record<string, unknown>[] = data.issues || [];
+    const nextStartAt = startAt + rawIssues.length;
+    const isLast = rawIssues.length === 0 || nextStartAt >= total;
+
+    // Re-use the same issue mapping as fetchJiraIssues
+    const issues = rawIssues.map((issue: Record<string, unknown>) => {
+      const fields = issue.fields as Record<string, unknown>;
+      const status = fields.status as Record<string, unknown>;
+      const statusCategory = status?.statusCategory as Record<string, unknown>;
+      const parentField = fields.parent as Record<string, unknown> | null;
+      const parentFields = parentField?.fields as
+        | Record<string, unknown>
+        | undefined;
+
+      const changelog = issue.changelog as Record<string, unknown> | undefined;
+      const histories =
+        (changelog?.histories as Record<string, unknown>[]) || [];
+      const statusChanges: {
+        from: string;
+        to: string;
+        date: string;
+        by: string;
+      }[] = [];
+      let reopenCount = 0;
+      let assigneeChanges = 0;
+      for (const history of histories) {
+        const items = (history.items as Record<string, unknown>[]) || [];
+        const author =
+          ((history.author as Record<string, unknown>)
+            ?.displayName as string) || "";
+        const created = (history.created as string) || "";
+        for (const item of items) {
+          if (item.field === "status") {
+            const toStr = (item["toString"] as string) || "";
+            statusChanges.push({
+              from: (item["fromString"] as string) || "",
+              to: toStr,
+              date: created,
+              by: author,
+            });
+            if (toStr.toLowerCase().includes("reopen")) reopenCount++;
+          }
+          if (item.field === "assignee") assigneeChanges++;
+        }
+      }
+
+      return {
+        id: (issue.id as string) || "",
+        key: issue.key,
+        summary: fields.summary,
+        status: (status?.name as string) || "Unknown",
+        statusCategory: (statusCategory?.name as string) || "Unknown",
+        updated: fields.updated,
+        created: (fields.created as string) || "",
+        priority:
+          ((fields.priority as Record<string, unknown>)?.name as string) || "",
+        issueType:
+          ((fields.issuetype as Record<string, unknown>)?.name as string) || "",
+        project:
+          ((fields.project as Record<string, unknown>)?.name as string) || "",
+        projectKey:
+          ((fields.project as Record<string, unknown>)?.key as string) || "",
+        resolution:
+          ((fields.resolution as Record<string, unknown>)?.name as string) ||
+          "",
+        labels: (fields.labels as string[]) || [],
+        assignee:
+          ((fields.assignee as Record<string, unknown>)
+            ?.displayName as string) || "Unassigned",
+        components: (
+          (fields.components as Record<string, unknown>[]) || []
+        ).map((c) => c.name as string),
+        reporter:
+          ((fields.reporter as Record<string, unknown>)
+            ?.displayName as string) || "",
+        timeEstimate:
+          typeof fields.timeoriginalestimate === "number"
+            ? Math.round(fields.timeoriginalestimate / 3600)
+            : 0,
+        timeSpent:
+          typeof fields.aggregatetimespent === "number"
+            ? Math.round(fields.aggregatetimespent / 3600)
+            : 0,
+        resolved: (fields.resolutiondate as string) || null,
+        storyPoints: (fields.customfield_10016 as number) || null,
+        epic: (parentField?.key as string) || null,
+        epicName: (parentFields?.summary as string) || null,
+        sprint: (() => {
+          const sf = fields.customfield_10020;
+          if (Array.isArray(sf) && sf.length > 0)
+            return (
+              ((sf[sf.length - 1] as Record<string, unknown>)
+                ?.name as string) || ""
+            );
+          return "";
+        })(),
+        dueDate: (fields.duedate as string) || null,
+        description: extractAdfText(fields.description),
+        commentsCount:
+          ((fields.comment as Record<string, unknown>)?.total as number) ?? 0,
+        statusChanges,
+        reopenCount,
+        assigneeChanges,
+        workratio:
+          typeof fields.workratio === "number" ? fields.workratio : null,
+        worklogs: (() => {
+          const wl = fields.worklog as Record<string, unknown> | undefined;
+          if (!wl) return [];
+          const entries = (wl.worklogs as Record<string, unknown>[]) || [];
+          return entries.map((e: Record<string, unknown>) => ({
+            author:
+              ((e.author as Record<string, unknown>)?.displayName as string) ||
+              "Unknown",
+            timeSpentSeconds: (e.timeSpentSeconds as number) || 0,
+            started: (e.started as string) || "",
+          }));
+        })(),
+      };
+    });
+
+    return { success: true, issues, total, startAt: nextStartAt, isLast };
   } catch (err: unknown) {
     return {
       success: false,

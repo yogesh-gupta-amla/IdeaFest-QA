@@ -2,12 +2,13 @@ import { create } from "zustand";
 import type { DashboardFilters, Priority, CodeIntelIssue } from "../types/qa";
 import type { Metrics, SnapshotMetrics, AuthMode, JiraIssue } from "../types";
 import { QA_THEMES, applyTheme } from "../themes";
-import type { QueryTimeRange } from "../utils/queryTimeRange";
+import type { QueryTimeRange, DateRange } from "../utils/queryTimeRange";
 
 interface DashboardStore {
   themeId: string;
   activeSection: string;
   queryTimeRange: QueryTimeRange;
+  dateRange: DateRange | null;
   filters: DashboardFilters;
   projectKey: string;
   projectName: string;
@@ -21,6 +22,7 @@ interface DashboardStore {
   rawIssues: JiraIssue[];
   recentlyResolved: JiraIssue[];
   ageingIssues: JiraIssue[];
+  activeIssues: JiraIssue[];
   overburntIssues: JiraIssue[];
   earlyCompletionIssues: JiraIssue[];
   codeIntelIssues: CodeIntelIssue[];
@@ -28,10 +30,12 @@ interface DashboardStore {
   setRawIssues: (issues: JiraIssue[]) => void;
   setRecentlyResolved: (issues: JiraIssue[]) => void;
   setAgeingIssues: (issues: JiraIssue[]) => void;
+  setActiveIssues: (issues: JiraIssue[]) => void;
   setOverburntIssues: (issues: JiraIssue[]) => void;
   setEarlyCompletionIssues: (issues: JiraIssue[]) => void;
   setCodeIntelIssues: (issues: CodeIntelIssue[]) => void;
   setQueryTimeRange: (timeRange: QueryTimeRange) => void;
+  setDateRange: (dateRange: DateRange | null) => void;
   setProjectDataLoaded: (loaded: boolean) => void;
   setTheme: (id: string) => void;
   setActiveSection: (section: string) => void;
@@ -58,7 +62,8 @@ const defaultFilters: DashboardFilters = {
 export const useDashboardStore = create<DashboardStore>((set) => ({
   themeId: "dark-pro",
   activeSection: "health",
-  queryTimeRange: "weekly",
+  queryTimeRange: "all",
+  dateRange: null,
   filters: defaultFilters,
   projectKey: "",
   projectName: "",
@@ -72,6 +77,7 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   rawIssues: [],
   recentlyResolved: [],
   ageingIssues: [],
+  activeIssues: [],
   overburntIssues: [],
   earlyCompletionIssues: [],
   codeIntelIssues: [],
@@ -79,10 +85,12 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   setRawIssues: (issues) => set({ rawIssues: issues }),
   setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
   setAgeingIssues: (issues) => set({ ageingIssues: issues }),
+  setActiveIssues: (issues) => set({ activeIssues: issues }),
   setOverburntIssues: (issues) => set({ overburntIssues: issues }),
   setEarlyCompletionIssues: (issues) => set({ earlyCompletionIssues: issues }),
   setCodeIntelIssues: (issues) => set({ codeIntelIssues: issues }),
   setQueryTimeRange: (queryTimeRange) => set({ queryTimeRange }),
+  setDateRange: (dateRange) => set({ dateRange }),
   setProjectDataLoaded: (projectDataLoaded) => set({ projectDataLoaded }),
 
   setTheme: (id) => {

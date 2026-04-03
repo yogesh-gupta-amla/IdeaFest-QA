@@ -320,9 +320,10 @@ const QALayout: React.FC<QALayoutProps> = ({
   const handleTimeRangeChange = useCallback(
     async (event: React.ChangeEvent<HTMLSelectElement>) => {
       if (!onTimeRangeChange || switchingRange) return;
+      const val = event.target.value as QueryTimeRange;
       setSwitchingRange(true);
       try {
-        await onTimeRangeChange(event.target.value as QueryTimeRange);
+        await onTimeRangeChange(val);
       } finally {
         setSwitchingRange(false);
       }
@@ -425,7 +426,7 @@ const QALayout: React.FC<QALayoutProps> = ({
               className="text-[10px]"
               style={{ color: "var(--qa-text-muted)" }}
             >
-              QA Dashboard
+              Intelligence Dashboard
             </div>
           </div>
         </div>
@@ -637,11 +638,11 @@ const QALayout: React.FC<QALayoutProps> = ({
           <div className="flex items-center gap-2">
             {/* Time range */}
             {onTimeRangeChange && (
-              <div className="relative">
+              <div className="relative flex items-center gap-1.5">
                 <Timer
                   size={12}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--text-muted)" }}
+                  className="pointer-events-none"
+                  style={{ color: "var(--qa-text-muted)" }}
                 />
                 <select
                   value={queryTimeRange}
@@ -649,8 +650,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   disabled={switchingRange}
                   style={{
                     ...selectStyle,
-                    paddingLeft: 24,
-                    minWidth: 120,
+                    minWidth: 110,
                     opacity: switchingRange ? 0.7 : 1,
                   }}
                 >

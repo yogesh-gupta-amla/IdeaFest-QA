@@ -1,0 +1,448 @@
+{
+  "info": {
+    "name": "DSR Tool — Jira API Collection",
+    "description": "All Jira REST API calls used by the DSR Chrome Extension.\n\nVariables:\n- {{BASE_URL}}: Your Jira instance (e.g. https://yourco.atlassian.net)\n- {{AUTH_TOKEN}}: Base64 encoded email:api-token\n- {{PROJECT_KEY}}: Jira project key (e.g. Z10LMC)\n- {{BOARD_ID}}: Board ID from board lookup\n- {{ISSUE_ID}}: Numeric Jira issue ID for dev-status",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "https://yourco.atlassian.net",
+      "type": "string"
+    },
+    { "key": "AUTH_TOKEN", "value": "", "type": "string" },
+    { "key": "PROJECT_KEY", "value": "Z10LMC", "type": "string" },
+    { "key": "BOARD_ID", "value": "1", "type": "string" },
+    { "key": "ISSUE_ID", "value": "10001", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Validate Auth (myself)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/myself",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "myself"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Projects",
+      "item": [
+        {
+          "name": "Fetch All Projects",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/project/search?maxResults=100&orderBy=name&status=live",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "project", "search"],
+              "query": [
+                { "key": "maxResults", "value": "100" },
+                { "key": "orderBy", "value": "name" },
+                { "key": "status", "value": "live" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Sprint",
+      "item": [
+        {
+          "name": "Fetch Board (Scrum)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/agile/1.0/board?projectKeyOrId={{PROJECT_KEY}}&type=scrum&maxResults=1",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "agile", "1.0", "board"],
+              "query": [
+                { "key": "projectKeyOrId", "value": "{{PROJECT_KEY}}" },
+                { "key": "type", "value": "scrum" },
+                { "key": "maxResults", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Fetch Board (Kanban)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/agile/1.0/board?projectKeyOrId={{PROJECT_KEY}}&type=kanban&maxResults=1",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "agile", "1.0", "board"],
+              "query": [
+                { "key": "projectKeyOrId", "value": "{{PROJECT_KEY}}" },
+                { "key": "type", "value": "kanban" },
+                { "key": "maxResults", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Fetch Active Sprint",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/agile/1.0/board/{{BOARD_ID}}/sprint?state=active&maxResults=1",
+              "host": ["{{BASE_URL}}"],
+              "path": [
+                "rest",
+                "agile",
+                "1.0",
+                "board",
+                "{{BOARD_ID}}",
+                "sprint"
+              ],
+              "query": [
+                { "key": "state", "value": "active" },
+                { "key": "maxResults", "value": "1" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Dashboard Queries (shared fetch)",
+      "item": [
+        {
+          "name": "Open Issues (Unresolved, created in range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND resolution = Unresolved AND created >= -7d ORDER BY priority ASC, created DESC&maxResults=2000&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND resolution = Unresolved AND created >= -7d ORDER BY priority ASC, created DESC"
+                },
+                { "key": "maxResults", "value": "2000" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Created Issues (all types, created in range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND created >= -7d ORDER BY priority ASC, created DESC&maxResults=200&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND created >= -7d ORDER BY priority ASC, created DESC"
+                },
+                { "key": "maxResults", "value": "200" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resolved Issues (resolved in range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND resolved >= -7d ORDER BY resolved DESC&maxResults=200&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND resolved >= -7d ORDER BY resolved DESC"
+                },
+                { "key": "maxResults", "value": "200" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Recently Resolved (resolved in range, larger set)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND resolved >= -7d ORDER BY resolved DESC&maxResults=500&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND resolved >= -7d ORDER BY resolved DESC"
+                },
+                { "key": "maxResults", "value": "500" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Ageing Analysis",
+      "item": [
+        {
+          "name": "Ageing Critical/Blockers",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, \"QA Done\", Rejected, \"Ready For Production\", \"Ready for QA\", \"Ready for Testing\", \"Ready For UAT\") AND created >= -7d ORDER BY created DESC&maxResults=500&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, \"QA Done\", Rejected, \"Ready For Production\", \"Ready for QA\", \"Ready for Testing\", \"Ready For UAT\") AND created >= -7d ORDER BY created DESC"
+                },
+                { "key": "maxResults", "value": "500" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Overburnt Items",
+      "item": [
+        {
+          "name": "Overburnt (workratio > 100, Done, last 7d)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND worklogDate >= -7d ORDER BY updated DESC&maxResults=500&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND worklogDate >= -7d ORDER BY updated DESC"
+                },
+                { "key": "maxResults", "value": "500" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Early Completions",
+      "item": [
+        {
+          "name": "Early Completions (Done, has estimate, resolved in range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND status = Done AND timeoriginalestimate > 0 AND resolved >= -7d ORDER BY resolved DESC&maxResults=500&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND status = Done AND timeoriginalestimate > 0 AND resolved >= -7d ORDER BY resolved DESC"
+                },
+                { "key": "maxResults", "value": "500" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Code Intelligence",
+      "item": [
+        {
+          "name": "Code Intel Issues (Done, resolved in range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND status = Done AND issuetype IN (Story, Task, Sub-task, Epic, Bug, Defect) AND resolved >= -7d ORDER BY resolved DESC&maxResults=300&fields=summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio&expand=changelog",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND status = Done AND issuetype IN (Story, Task, Sub-task, Epic, Bug, Defect) AND resolved >= -7d ORDER BY resolved DESC"
+                },
+                { "key": "maxResults", "value": "300" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,updated,created,priority,assignee,issuetype,project,resolution,labels,components,reporter,timeoriginalestimate,aggregatetimespent,resolutiondate,parent,customfield_10016,customfield_10020,duedate,description,comment,worklog,workratio"
+                },
+                { "key": "expand", "value": "changelog" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Dev Status — Linked Commits/PRs (Cloud)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/dev-status/latest/issue/detail?issueId={{ISSUE_ID}}&applicationType=GitHub&dataType=repository",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "dev-status", "latest", "issue", "detail"],
+              "query": [
+                { "key": "issueId", "value": "{{ISSUE_ID}}" },
+                { "key": "applicationType", "value": "GitHub" },
+                { "key": "dataType", "value": "repository" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Dev Status — Linked Commits/PRs (Server/DC fallback)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/dev-status/1.0/issue/detail?issueId={{ISSUE_ID}}&applicationType=stash&dataType=repository",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "dev-status", "1.0", "issue", "detail"],
+              "query": [
+                { "key": "issueId", "value": "{{ISSUE_ID}}" },
+                { "key": "applicationType", "value": "stash" },
+                { "key": "dataType", "value": "repository" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Jira Explorer (custom JQL)",
+      "item": [
+        {
+          "name": "Run Custom JQL",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Basic {{AUTH_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/rest/api/3/search/jql?jql=project = \"{{PROJECT_KEY}}\" AND created >= -7d ORDER BY created DESC&maxResults=500&fields=summary,status,issuetype,priority,assignee,reporter,project,components,labels,created,updated,resolutiondate,duedate,resolution,fixVersions,customfield_10016,customfield_10020,aggregatetimespent,timeoriginalestimate,parent,subtasks",
+              "host": ["{{BASE_URL}}"],
+              "path": ["rest", "api", "3", "search", "jql"],
+              "query": [
+                {
+                  "key": "jql",
+                  "value": "project = \"{{PROJECT_KEY}}\" AND created >= -7d ORDER BY created DESC"
+                },
+                { "key": "maxResults", "value": "500" },
+                {
+                  "key": "fields",
+                  "value": "summary,status,issuetype,priority,assignee,reporter,project,components,labels,created,updated,resolutiondate,duedate,resolution,fixVersions,customfield_10016,customfield_10020,aggregatetimespent,timeoriginalestimate,parent,subtasks"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

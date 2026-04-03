@@ -9,6 +9,9 @@ import {
   Alert,
   Statistic,
   Badge,
+  Button,
+  Tooltip as AntTooltip,
+  message,
 } from "antd";
 import {
   BarChart,
@@ -16,11 +19,12 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
 } from "recharts";
 import { useAgeingAnalysis } from "../../hooks/useQAData";
+import { useDashboardStore } from "../../store/useStore";
 import ChartCard from "../Charts/ChartCard";
 import { exportAgeingToExcel } from "../../utils/exportUtils";
 import {
@@ -28,9 +32,9 @@ import {
   WarningOutlined,
   ClockCircleOutlined,
   BugOutlined,
-  AlertOutlined,
+  CodeOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
-import { Button } from "antd";
 import type { AgeingItem, AgeingStatus } from "../../types/qa";
 import type { ColumnsType } from "antd/es/table";
 
@@ -40,17 +44,26 @@ const AGEING_COLORS: Record<AgeingStatus, string> = {
   AGED: "#ff4d4f",
 };
 
-type AgeingTab = "all" | "over48" | "fresh";
+type AgeingTab = "over48" | "fresh";
 
 const TAB_CONFIG: { key: AgeingTab; label: string; icon: React.ReactNode }[] = [
-  { key: "all", label: "Total Critical/Blockers", icon: <AlertOutlined /> },
   { key: "over48", label: "Reported >48 Hrs", icon: <ClockCircleOutlined /> },
   { key: "fresh", label: "Fresh Bugs", icon: <BugOutlined /> },
 ];
 
 const AgeingAnalysis: React.FC = () => {
   const { data: result, isLoading, error } = useAgeingAnalysis();
-  const [activeTab, setActiveTab] = useState<AgeingTab>("all");
+  const projectKey = useDashboardStore((s) => s.projectKey);
+  const ageingIssues = useDashboardStore((s) => s.ageingIssues);
+  const [activeTab, setActiveTab] = useState<AgeingTab>("over48");
+  const [showJql, setShowJql] = useState(false);
+
+  // The JQL queries used (no time range — fetches ALL via pagination)
+  const AGEING_JQL = {
+    main: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") ORDER BY created DESC`,
+    over48: `issuetype IN (Bug) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND project = ${projectKey} — filtered client-side: created > 48 hours ago`,
+    fresh: `issuetype IN (Bug, Defect) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND project = ${projectKey} — filtered client-side: created > 8 hours ago`,
+  };
 
   if (isLoading)
     return (
@@ -77,12 +90,7 @@ const AgeingAnalysis: React.FC = () => {
   } = result;
 
   // Pick the visible list based on active tab
-  const visibleItems =
-    activeTab === "over48"
-      ? reportedOver48
-      : activeTab === "fresh"
-        ? freshBugs
-        : totalCriticalBlockers;
+  const visibleItems = activeTab === "fresh" ? freshBugs : reportedOver48;
 
   const allItems = totalCriticalBlockers;
   const fresh = allItems.filter((i) => i.ageingStatus === "FRESH").length;
@@ -145,25 +153,28 @@ const AgeingAnalysis: React.FC = () => {
       render: (m: string) => <Tag color="blue">{m}</Tag>,
     },
     {
-      title: "Hours Elapsed",
+      title: "Elapsed",
       dataIndex: "hoursElapsed",
       width: 120,
       sorter: (a: AgeingItem, b: AgeingItem) => b.hoursElapsed - a.hoursElapsed,
-      render: (h: number, row: AgeingItem) => (
-        <span
-          style={{
-            color: row.slaBreach ? "#ff4d4f" : "var(--qa-text-primary)",
-            fontWeight: 600,
-          }}
-        >
-          {h}h{" "}
-          {row.slaBreach && (
-            <Tag color="red" style={{ marginLeft: 4 }}>
-              SLA BREACH
-            </Tag>
-          )}
-        </span>
-      ),
+      render: (h: number) => {
+        const label = h > 60 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h`;
+        return (
+          <span
+            style={{
+              fontWeight: 600,
+              color:
+                h > 48
+                  ? "#ff4d4f"
+                  : h > 24
+                    ? "#faad14"
+                    : "var(--qa-text-primary)",
+            }}
+          >
+            {label}
+          </span>
+        );
+      },
     },
     {
       title: "Ageing",
@@ -210,17 +221,125 @@ const AgeingAnalysis: React.FC = () => {
     },
   ];
 
+  const handleCopyJql = (jql: string) => {
+    navigator.clipboard.writeText(jql);
+    message.success("JQL copied to clipboard");
+  };
+
   return (
     <div>
+      {/* JQL Query Panel */}
+      <div style={{ marginBottom: 16 }}>
+        <Button
+          icon={<CodeOutlined />}
+          size="small"
+          onClick={() => setShowJql(!showJql)}
+          style={{
+            background: "var(--qa-bg-card)",
+            border: "1px solid var(--qa-border)",
+            color: "var(--qa-text-secondary)",
+            borderRadius: 8,
+          }}
+        >
+          {showJql ? "Hide" : "Show"} JQL Queries
+        </Button>
+        <span
+          style={{
+            marginLeft: 12,
+            fontSize: 12,
+            color: "var(--qa-text-muted)",
+          }}
+        >
+          📊 Total issues fetched (all pages):{" "}
+          <strong style={{ color: "var(--qa-accent)" }}>
+            {ageingIssues.length}
+          </strong>
+        </span>
+        {showJql && (
+          <Card
+            style={{
+              marginTop: 10,
+              background: "var(--qa-bg-card)",
+              border: "1px solid var(--qa-border)",
+              borderRadius: 10,
+            }}
+            styles={{ body: { padding: "12px 16px" } }}
+          >
+            {[
+              {
+                label: "🚨 Main Query (All Critical/Blockers)",
+                jql: AGEING_JQL.main,
+              },
+              {
+                label: "⏰ Reported >48 Hrs (client-filtered)",
+                jql: AGEING_JQL.over48,
+              },
+              {
+                label: "🐛 Fresh Bugs (client-filtered)",
+                jql: AGEING_JQL.fresh,
+              },
+            ].map((q) => (
+              <div key={q.label} style={{ marginBottom: 12 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--qa-text-muted)",
+                    marginBottom: 4,
+                  }}
+                >
+                  {q.label}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "var(--qa-bg-body)",
+                    borderRadius: 6,
+                    padding: "8px 12px",
+                    border: "1px solid var(--qa-border)",
+                  }}
+                >
+                  <code
+                    style={{
+                      flex: 1,
+                      fontSize: 11,
+                      wordBreak: "break-all",
+                      color: "var(--qa-text-secondary)",
+                    }}
+                  >
+                    {q.jql}
+                  </code>
+                  <AntTooltip title="Copy JQL">
+                    <Button
+                      icon={<CopyOutlined />}
+                      size="small"
+                      type="text"
+                      onClick={() => handleCopyJql(q.jql)}
+                      style={{ color: "var(--qa-text-muted)" }}
+                    />
+                  </AntTooltip>
+                </div>
+              </div>
+            ))}
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--qa-text-muted)",
+                fontStyle: "italic",
+              }}
+            >
+              ℹ️ No daily/weekly time filter applied. All matching issues are
+              fetched via full pagination (isLast = false → keep fetching).
+            </div>
+          </Card>
+        )}
+      </div>
+
       {/* Summary Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         {[
-          {
-            label: "Total Critical/Blockers",
-            value: totalCriticalBlockers.length,
-            color: "var(--qa-accent)",
-            icon: "🚨",
-          },
           {
             label: "Reported >48 Hrs",
             value: reportedOver48.length,
@@ -283,7 +402,7 @@ const AgeingAnalysis: React.FC = () => {
                   tick={{ fontSize: 12, fill: "var(--qa-text-muted)" }}
                 />
                 <YAxis tick={{ fontSize: 10, fill: "var(--qa-text-muted)" }} />
-                <Tooltip
+                <RechartsTooltip
                   contentStyle={{
                     background: "var(--qa-bg-card)",
                     border: "1px solid var(--qa-border)",
@@ -369,11 +488,7 @@ const AgeingAnalysis: React.FC = () => {
       >
         {TAB_CONFIG.map((tab) => {
           const count =
-            tab.key === "all"
-              ? totalCriticalBlockers.length
-              : tab.key === "over48"
-                ? reportedOver48.length
-                : freshBugs.length;
+            tab.key === "over48" ? reportedOver48.length : freshBugs.length;
           return (
             <Button
               key={tab.key}
@@ -401,11 +516,9 @@ const AgeingAnalysis: React.FC = () => {
       <Card
         title={
           <span style={{ color: "var(--qa-text-primary)" }}>
-            {activeTab === "over48"
-              ? "⏰ Issues Reported >48 Hours (Backlog/Open)"
-              : activeTab === "fresh"
-                ? "🐛 Fresh Bugs >8h Unattended (Backlog/Open)"
-                : "🚨 All Critical/Blocker Issues"}
+            {activeTab === "fresh"
+              ? "🐛 Fresh Bugs >8h Unattended (Backlog/Open)"
+              : "⏰ Issues Reported >48 Hours (Backlog/Open)"}
           </span>
         }
         extra={
@@ -442,11 +555,9 @@ const AgeingAnalysis: React.FC = () => {
           locale={{
             emptyText: (
               <div style={{ padding: 24, color: "var(--qa-text-muted)" }}>
-                {activeTab === "over48"
-                  ? "No Blocker/Critical bugs in Backlog/Open for >48 hours"
-                  : activeTab === "fresh"
-                    ? "No fresh bugs unattended for >8 hours"
-                    : "No Critical/Blocker issues found in the selected time range"}
+                {activeTab === "fresh"
+                  ? "No fresh bugs unattended for >8 hours"
+                  : "No Blocker/Critical bugs in Backlog/Open for >48 hours"}
               </div>
             ),
           }}

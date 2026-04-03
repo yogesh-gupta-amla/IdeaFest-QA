@@ -84,13 +84,19 @@ const SEVERITY_COLORS: Record<string, string> = {
 export const calculateProjectHealth = (
   issues: QAIssue[],
   recentlyResolved?: QAIssue[],
-  timeRange: QueryTimeRange = "weekly",
+  timeRange: QueryTimeRange = "thisweek",
+  dateRange?: [string, string],
+  ageingIssues?: QAIssue[],
 ): ProjectHealthResult => {
   const active = issues.filter(isActiveIssue);
   const total = active.length;
-  const criticalBlockerCount = active.filter(
-    (i) => i.priority === "Critical" || i.priority === "Blocker",
-  ).length;
+  // Use ageing dataset (canonical lifetime Critical/Blocker query) when available
+  const criticalBlockerCount =
+    ageingIssues && ageingIssues.length > 0
+      ? ageingIssues.length
+      : active.filter(
+          (i) => i.priority === "Critical" || i.priority === "Blocker",
+        ).length;
   const highSeverityCount = active.filter((i) => i.priority === "High").length;
   const reopenedCount = active.filter(
     (i) => i.reopenCount > 0 || i.status === "Reopened",
@@ -102,7 +108,14 @@ export const calculateProjectHealth = (
   });
   const slaBreachCount = slaBreachedIssues.length;
 
-  const rangeHours = timeRange === "today" ? 24 : 168;
+  const rangeHours =
+    timeRange === "all"
+      ? Infinity
+      : timeRange === "lastweek"
+        ? 168
+        : timeRange === "oneday"
+          ? 24
+          : 168; // thisweek
 
   // Use recentlyResolved (last 7d) for closure rate if provided
   const resolvedInLast7d = recentlyResolved
@@ -160,10 +173,19 @@ export const calculateProjectHealth = (
   const allIssuesForTrend = recentlyResolved
     ? [...issues, ...recentlyResolved]
     : issues;
+  // Build defect trend: determine the day-range for the trend chart
+  const trendDays =
+    timeRange === "all"
+      ? 30 // show last 30 days for all-time view
+      : timeRange === "oneday"
+        ? 1
+        : 7; // thisweek or lastweek
+
   const defectTrend: TrendPoint[] =
-    timeRange === "today"
+    trendDays <= 1
       ? Array.from({ length: 24 }, (_, hour) => {
-          const slotStart = new Date();
+          const baseDate = new Date();
+          const slotStart = new Date(baseDate);
           slotStart.setHours(hour, 0, 0, 0);
           const slotEnd = new Date(slotStart);
           slotEnd.setHours(hour, 59, 59, 999);
@@ -186,9 +208,20 @@ export const calculateProjectHealth = (
           }).length;
           return { date: label, created, resolved, open };
         })
-      : Array.from({ length: 7 }, (_, i) => {
-          const day = new Date();
-          day.setDate(day.getDate() - (6 - i));
+      : Array.from({ length: Math.min(trendDays, 90) }, (_, i) => {
+          const endDate =
+            timeRange === "lastweek"
+              ? (() => {
+                  const n = new Date();
+                  const d = n.getDay();
+                  const diff = d === 0 ? -6 : 1 - d;
+                  const m = new Date(n);
+                  m.setDate(n.getDate() + diff - 1);
+                  return m;
+                })()
+              : new Date();
+          const day = new Date(endDate);
+          day.setDate(day.getDate() - (Math.min(trendDays, 90) - 1 - i));
           const date = day.toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
@@ -256,22 +289,52 @@ const isBacklogOrOpen = (originalStatus: string): boolean =>
 const isBlockedStatus = (originalStatus: string): boolean =>
   originalStatus.toLowerCase().trim() === "blocked";
 
+/**
+ * Calculate weekday (Mon–Fri) business hours between two dates.
+ * Counts only hours that fall on weekdays.
+ */
+function weekdayHoursBetween(from: Date, to: Date): number {
+  let hours = 0;
+  const cursor = new Date(from);
+  cursor.setMinutes(0, 0, 0);
+  while (cursor < to) {
+    const day = cursor.getDay(); // 0=Sun, 6=Sat
+    if (day >= 1 && day <= 5) hours++;
+    cursor.setTime(cursor.getTime() + 3600000); // advance 1 hour
+  }
+  return hours;
+}
+
+/**
+ * Get the most recent status change date; falls back to created date.
+ */
+function lastStatusUpdateDate(issue: QAIssue): Date {
+  if (issue.statusChanges.length > 0) {
+    const sorted = [...issue.statusChanges].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+    return new Date(sorted[0].date);
+  }
+  return new Date(issue.created);
+}
+
 function buildAgeingItem(issue: QAIssue): AgeingItem {
   const hoursElapsed = hoursSince(issue.created);
   const { slaHours } = issue;
-  const slaRatio = hoursElapsed / slaHours;
+
+  // Ageing logic: if no status update within 48 weekday (Mon–Fri) hours → AGED, otherwise FRESH
+  const lastUpdate = lastStatusUpdateDate(issue);
+  const businessHoursSinceUpdate = weekdayHoursBetween(lastUpdate, new Date());
 
   let ageingStatus: AgeingStatus;
-  if (slaRatio < 0.6) ageingStatus = "FRESH";
-  else if (slaRatio < 1.0) ageingStatus = "AT_RISK";
-  else ageingStatus = "AGED";
+  if (businessHoursSinceUpdate >= 48) ageingStatus = "AGED";
+  else if (businessHoursSinceUpdate >= 24) ageingStatus = "AT_RISK";
+  else ageingStatus = "FRESH";
 
-  // 48-hour override: if >48h and still in Backlog/Open → escalate
   const isEscalated =
     hoursElapsed > 48 && isBacklogOrOpen(issue.originalStatus);
-  if (isEscalated && ageingStatus === "FRESH") ageingStatus = "AT_RISK";
 
-  let riskScore = slaRatio * 50;
+  let riskScore = (businessHoursSinceUpdate / 48) * 50;
   if (HIGH_RISK_MODULES.includes(issue.module)) riskScore += 20;
   if (PROD_ENVIRONMENTS.includes(issue.environment)) riskScore += 20;
   if (issue.reopenCount > 0) riskScore += issue.reopenCount * 5;
@@ -1042,7 +1105,7 @@ export const generateAIRecommendations = (
 export const calculateEarlyCompletions = (
   issues: QAIssue[],
 ): EarlyCompletionAnalysis => {
-  // Only Done issues with both originalEstimate and resolved date
+  // STRICT: Only issues with Status = Done
   const doneIssues = issues.filter(
     (i) =>
       i.originalStatus?.toLowerCase() === "done" ||
@@ -1050,44 +1113,65 @@ export const calculateEarlyCompletions = (
       i.status === "Closed",
   );
 
+  // STRICT: Exclude issues where Original Estimate is missing or zero
   const withEstimate = doneIssues.filter(
     (i) => i.timeEstimate > 0 && i.resolved,
   );
 
+  // STRICT: Exclude issues where Time Spent (Time Tracking) = 0
+  const validIssues = withEstimate.filter((i) => (i.timeLogged || 0) > 0);
+
   const earlyItems: EarlyCompletionItem[] = [];
 
-  for (const issue of withEstimate) {
-    const createdMs = new Date(issue.created).getTime();
-    const resolvedMs = new Date(issue.resolved!).getTime();
-    if (resolvedMs <= createdMs) continue; // skip invalid
-
-    const timeTakenHours =
-      Math.round(((resolvedMs - createdMs) / (1000 * 60 * 60)) * 100) / 100;
+  for (const issue of validIssues) {
+    const originalEstimateSeconds = issue.timeEstimate;
+    const timeSpentSeconds = issue.timeLogged || 0;
     const originalEstimateHours =
-      Math.round((issue.timeEstimate / 3600) * 100) / 100;
+      Math.round((originalEstimateSeconds / 3600) * 100) / 100;
+    const timeTakenHours = Math.round((timeSpentSeconds / 3600) * 100) / 100;
 
-    if (timeTakenHours < originalEstimateHours) {
+    // Difference % = ((Original Estimate - Time Spent) / Original Estimate) * 100
+    const differencePercent =
+      Math.round(
+        ((originalEstimateHours - timeTakenHours) / originalEstimateHours) *
+          10000,
+      ) / 100;
+
+    const timeSavedHours =
+      Math.round((originalEstimateHours - timeTakenHours) * 100) / 100;
+
+    // If Difference % >= 20% → Early Completed
+    if (differencePercent >= 20) {
       earlyItems.push({
         issue,
         createdDate: issue.created,
         resolutionDate: issue.resolved!,
         originalEstimateHours,
         timeTakenHours,
-        timeSavedHours:
-          Math.round((originalEstimateHours - timeTakenHours) * 100) / 100,
+        timeSavedHours,
+        differencePercent,
       });
     }
   }
 
-  // Sort by time saved descending
-  earlyItems.sort((a, b) => b.timeSavedHours - a.timeSavedHours);
+  // Sort by differencePercent descending (most efficient first)
+  earlyItems.sort((a, b) => b.differencePercent - a.differencePercent);
 
   const totalEarlyItems = earlyItems.length;
-  const totalDoneItems = withEstimate.length;
+  const totalDoneItems = validIssues.length;
+  const totalIssuesAnalyzed = doneIssues.length;
   const avgTimeSavedHours =
     totalEarlyItems > 0
       ? Math.round(
           (earlyItems.reduce((s, i) => s + i.timeSavedHours, 0) /
+            totalEarlyItems) *
+            100,
+        ) / 100
+      : 0;
+  const avgPercentSaved =
+    totalEarlyItems > 0
+      ? Math.round(
+          (earlyItems.reduce((s, i) => s + i.differencePercent, 0) /
             totalEarlyItems) *
             100,
         ) / 100
@@ -1101,7 +1185,9 @@ export const calculateEarlyCompletions = (
     items: earlyItems,
     totalEarlyItems,
     totalDoneItems,
+    totalIssuesAnalyzed,
     avgTimeSavedHours,
+    avgPercentSaved,
     earlyCompletionPercentage,
   };
 };
@@ -1110,132 +1196,384 @@ export const calculateEarlyCompletions = (
 export const calculateCodeIntelligence = (
   issues: CodeIntelIssue[],
 ): CodeIntelAnalysis => {
-  const totalCommits = issues.reduce((s, i) => s + i.commits.length, 0);
-  const totalPRs = issues.reduce((s, i) => s + i.pullRequests.length, 0);
+  // ONLY consider Stories and Epics
+  const filtered = issues.filter((i) => {
+    const t = i.issueType.toLowerCase();
+    return t === "story" || t === "epic";
+  });
+  const totalCommits = filtered.reduce((s, i) => s + i.commits.length, 0);
+  const totalPRs = filtered.reduce((s, i) => s + i.pullRequests.length, 0);
   const hasDevInfo = totalCommits > 0 || totalPRs > 0;
 
-  // ── 1. Keyword extraction from summaries, descriptions, labels, components ──
-  const keywordMap = new Map<string, Set<string>>();
-  const fileMap = new Map<string, Set<string>>();
+  // ── Page/Module Categories ──
+  const PAGE_CATEGORIES: Record<string, string[]> = {
+    "Home Page": [
+      "home",
+      "homepage",
+      "landing",
+      "banner",
+      "hero",
+      "carousel",
+      "slider",
+      "featured",
+    ],
+    PLP: [
+      "plp",
+      "product list",
+      "listing",
+      "category",
+      "catalog",
+      "collection",
+      "browse",
+      "filter",
+      "sort",
+      "facet",
+      "search result",
+    ],
+    PDP: [
+      "pdp",
+      "product detail",
+      "product page",
+      "product view",
+      "product info",
+      "size guide",
+      "product image",
+      "zoom",
+      "swatch",
+      "variant",
+    ],
+    Cart: [
+      "cart",
+      "add to cart",
+      "minicart",
+      "mini-cart",
+      "bag",
+      "shopping bag",
+      "basket",
+      "cart item",
+      "quantity",
+    ],
+    Checkout: [
+      "checkout",
+      "shipping",
+      "delivery",
+      "address",
+      "order summary",
+      "order review",
+      "place order",
+      "guest checkout",
+    ],
+    Payment: [
+      "payment",
+      "pay",
+      "credit card",
+      "debit",
+      "wallet",
+      "upi",
+      "cod",
+      "cash on delivery",
+      "razorpay",
+      "stripe",
+      "transaction",
+      "refund",
+    ],
+    Authentication: [
+      "login",
+      "signup",
+      "sign up",
+      "register",
+      "forgot password",
+      "reset password",
+      "otp",
+      "auth",
+      "sso",
+      "session",
+    ],
+    "My Account": [
+      "my account",
+      "profile",
+      "order history",
+      "wishlist",
+      "saved",
+      "address book",
+      "account settings",
+      "loyalty",
+      "rewards",
+    ],
+    Navigation: [
+      "header",
+      "footer",
+      "menu",
+      "navigation",
+      "navbar",
+      "breadcrumb",
+      "sidebar",
+      "mega menu",
+    ],
+    Search: [
+      "search",
+      "autocomplete",
+      "typeahead",
+      "search suggest",
+      "search bar",
+      "search result",
+    ],
+    "API / Backend": [
+      "api",
+      "endpoint",
+      "backend",
+      "server",
+      "middleware",
+      "service",
+      "graphql",
+      "rest",
+      "webhook",
+    ],
+    Performance: [
+      "performance",
+      "speed",
+      "load time",
+      "cache",
+      "cdn",
+      "lazy load",
+      "optimize",
+      "lighthouse",
+    ],
+    Notifications: [
+      "notification",
+      "email",
+      "sms",
+      "push notification",
+      "alert",
+      "toast",
+    ],
+    "Admin / CMS": [
+      "admin",
+      "cms",
+      "dashboard",
+      "manage",
+      "configuration",
+      "settings",
+    ],
+  };
+
+  function classifyIssueToPage(issue: CodeIntelIssue): string {
+    const text =
+      `${issue.summary} ${issue.description} ${issue.labels.join(" ")} ${issue.components.join(" ")}`.toLowerCase();
+    let bestMatch = "";
+    let bestScore = 0;
+    for (const [page, keywords] of Object.entries(PAGE_CATEGORIES)) {
+      let score = 0;
+      for (const kw of keywords) {
+        if (text.includes(kw)) score += kw.split(" ").length; // multi-word matches score higher
+      }
+      // Also check components directly
+      for (const comp of issue.components) {
+        const cl = comp.toLowerCase();
+        for (const kw of keywords) {
+          if (cl.includes(kw) || kw.includes(cl)) score += 3;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = page;
+      }
+    }
+    return bestMatch || issue.components[0] || issue.labels[0] || "General";
+  }
+
+  // ── 1. Classify all issues by page ──
+  const issuesByPage = new Map<string, CodeIntelIssue[]>();
+  for (const issue of filtered) {
+    const page = classifyIssueToPage(issue);
+    if (!issuesByPage.has(page)) issuesByPage.set(page, []);
+    issuesByPage.get(page)!.push(issue);
+  }
+
+  // ── 2. Build keyword, file, and developer maps ──
   const devCommitMap = new Map<
     string,
-    { commits: string[]; issues: Set<string>; files: Set<string> }
+    {
+      commits: string[];
+      issues: Set<string>;
+      files: Set<string>;
+      areas: Set<string>;
+    }
   >();
 
-  for (const issue of issues) {
-    const tokens = extractKeywords(issue);
-    for (const token of tokens) {
-      if (!keywordMap.has(token)) keywordMap.set(token, new Set());
-      keywordMap.get(token)!.add(issue.issueKey);
-    }
+  for (const issue of filtered) {
+    const page = classifyIssueToPage(issue);
     for (const c of issue.commits) {
-      for (const f of c.files) {
-        const dir = f.split("/").slice(0, -1).join("/") || f;
-        if (!fileMap.has(dir)) fileMap.set(dir, new Set());
-        fileMap.get(dir)!.add(issue.issueKey);
-      }
       const dev = c.author || issue.assignee;
       if (!devCommitMap.has(dev))
         devCommitMap.set(dev, {
           commits: [],
           issues: new Set(),
           files: new Set(),
+          areas: new Set(),
         });
       const d = devCommitMap.get(dev)!;
       d.commits.push(c.id);
       d.issues.add(issue.issueKey);
+      d.areas.add(page);
       c.files.forEach((f) => d.files.add(f));
     }
-    // Also count assignees even without commits
-    if (issue.commits.length === 0) {
-      const dev = issue.assignee;
-      if (dev && dev !== "Unassigned") {
-        if (!devCommitMap.has(dev))
-          devCommitMap.set(dev, {
-            commits: [],
-            issues: new Set(),
-            files: new Set(),
-          });
-        devCommitMap.get(dev)!.issues.add(issue.issueKey);
+    if (
+      issue.commits.length === 0 &&
+      issue.assignee &&
+      issue.assignee !== "Unassigned"
+    ) {
+      if (!devCommitMap.has(issue.assignee))
+        devCommitMap.set(issue.assignee, {
+          commits: [],
+          issues: new Set(),
+          files: new Set(),
+          areas: new Set(),
+        });
+      const d = devCommitMap.get(issue.assignee)!;
+      d.issues.add(issue.issueKey);
+      d.areas.add(page);
+    }
+  }
+
+  // ── 3. Reusable components grouped by page/module ──
+  const reusableByPage: Record<string, ReusableComponent[]> = {};
+
+  for (const [page, pageIssues] of issuesByPage) {
+    if (pageIssues.length < 1) continue;
+    const components: ReusableComponent[] = [];
+
+    // File-based reuse within this page
+    const fileMap = new Map<string, Set<string>>();
+    for (const issue of pageIssues) {
+      for (const c of issue.commits) {
+        for (const f of c.files) {
+          const dir = f.split("/").slice(0, -1).join("/") || f;
+          if (!fileMap.has(dir)) fileMap.set(dir, new Set());
+          fileMap.get(dir)!.add(issue.issueKey);
+        }
       }
     }
-  }
+    for (const [dir, issueKeys] of fileMap) {
+      if (issueKeys.size >= 2) {
+        const relIssues = Array.from(issueKeys);
+        const commits = pageIssues
+          .filter((i) => issueKeys.has(i.issueKey))
+          .flatMap((i) => i.commits)
+          .filter((c) => c.files.some((f) => f.startsWith(dir)))
+          .slice(0, 5);
+        components.push({
+          componentName: dir.split("/").pop() || dir,
+          description: `Shared code path: ${dir} — modified across ${issueKeys.size} issues in ${page}`,
+          relatedIssues: relIssues,
+          relevantCommits: commits.map((c) => ({
+            commitId: c.id,
+            githubUrl: c.url,
+            url: c.url,
+            summary: c.message.substring(0, 80),
+          })),
+          reusabilityScore:
+            issueKeys.size >= 4
+              ? "High"
+              : issueKeys.size >= 3
+                ? "Medium"
+                : "Low",
+          recommendedUsage: `Extract reusable logic from ${dir} into a shared ${page} module`,
+        });
+      }
+    }
 
-  // ── 2. Reusable components (keywords/files shared across 2+ issues) ──
-  const reusableComponents: ReusableComponent[] = [];
+    // Keyword-based reuse within this page
+    const keywordMap = new Map<string, Set<string>>();
+    for (const issue of pageIssues) {
+      const tokens = extractKeywords(issue);
+      for (const token of tokens) {
+        if (!keywordMap.has(token)) keywordMap.set(token, new Set());
+        keywordMap.get(token)!.add(issue.issueKey);
+      }
+    }
+    const processedKw = new Set<string>();
+    for (const [keyword, issueKeys] of keywordMap) {
+      if (issueKeys.size >= 2 && !processedKw.has(keyword)) {
+        processedKw.add(keyword);
+        const relIssues = Array.from(issueKeys);
+        const commits = pageIssues
+          .filter((i) => issueKeys.has(i.issueKey))
+          .flatMap((i) => i.commits)
+          .slice(0, 3);
+        components.push({
+          componentName: keyword,
+          description: `"${keyword}" functionality appears in ${issueKeys.size} issues within ${page}`,
+          relatedIssues: relIssues,
+          relevantCommits: commits.map((c) => ({
+            commitId: c.id,
+            githubUrl: c.url,
+            url: c.url,
+            summary: c.message.substring(0, 80),
+          })),
+          reusabilityScore:
+            issueKeys.size >= 4
+              ? "High"
+              : issueKeys.size >= 3
+                ? "Medium"
+                : "Low",
+          recommendedUsage: `Consolidate "${keyword}" implementations into a reusable ${page} service`,
+        });
+      }
+    }
 
-  // From file overlap
-  for (const [dir, issueKeys] of fileMap) {
-    if (issueKeys.size >= 2) {
-      const relIssues = Array.from(issueKeys);
-      const commits = issues
-        .filter((i) => issueKeys.has(i.issueKey))
-        .flatMap((i) => i.commits)
-        .filter((c) => c.files.some((f) => f.startsWith(dir)))
-        .slice(0, 5);
-      reusableComponents.push({
-        componentName: dir.split("/").pop() || dir,
-        description: `Shared code path: ${dir} — modified across ${issueKeys.size} issues`,
-        relatedIssues: relIssues,
-        relevantCommits: commits.map((c) => ({
+    // If no file/keyword overlap but multiple issues, create a page-level component
+    if (components.length === 0 && pageIssues.length >= 2) {
+      const allCommits = pageIssues.flatMap((i) => i.commits).slice(0, 5);
+      components.push({
+        componentName: `${page} Module`,
+        description: `${pageIssues.length} issues touch the ${page} area — consider shared patterns`,
+        relatedIssues: pageIssues.map((i) => i.issueKey).slice(0, 10),
+        relevantCommits: allCommits.map((c) => ({
           commitId: c.id,
+          githubUrl: c.url,
           url: c.url,
           summary: c.message.substring(0, 80),
         })),
-        reusabilityScore:
-          issueKeys.size >= 4 ? "High" : issueKeys.size >= 3 ? "Medium" : "Low",
-        recommendedUsage: `Extract reusable logic from ${dir} into a shared module/service`,
+        reusabilityScore: pageIssues.length >= 5 ? "High" : "Medium",
+        recommendedUsage: `Review ${page} area for shared component extraction opportunities`,
       });
+    }
+
+    components.sort(
+      (a, b) =>
+        (b.reusabilityScore === "High"
+          ? 3
+          : b.reusabilityScore === "Medium"
+            ? 2
+            : 1) -
+        (a.reusabilityScore === "High"
+          ? 3
+          : a.reusabilityScore === "Medium"
+            ? 2
+            : 1),
+    );
+
+    if (components.length > 0) {
+      reusableByPage[page] = components.slice(0, 10);
     }
   }
 
-  // From keyword overlap
-  const processedKeywords = new Set<string>();
-  for (const [keyword, issueKeys] of keywordMap) {
-    if (issueKeys.size >= 3 && !processedKeywords.has(keyword)) {
-      processedKeywords.add(keyword);
-      const relIssues = Array.from(issueKeys);
-      const commits = issues
-        .filter((i) => issueKeys.has(i.issueKey))
-        .flatMap((i) => i.commits)
-        .slice(0, 3);
-      reusableComponents.push({
-        componentName: keyword,
-        description: `Functionality area "${keyword}" appears in ${issueKeys.size} issues — potential shared service`,
-        relatedIssues: relIssues,
-        relevantCommits: commits.map((c) => ({
-          commitId: c.id,
-          url: c.url,
-          summary: c.message.substring(0, 80),
-        })),
-        reusabilityScore: issueKeys.size >= 5 ? "High" : "Medium",
-        recommendedUsage: `Consolidate "${keyword}" implementations into a reusable module`,
-      });
-    }
-  }
-  reusableComponents.sort(
-    (a, b) =>
-      (b.reusabilityScore === "High"
-        ? 3
-        : b.reusabilityScore === "Medium"
-          ? 2
-          : 1) -
-      (a.reusabilityScore === "High"
-        ? 3
-        : a.reusabilityScore === "Medium"
-          ? 2
-          : 1),
+  const totalReusableCount = Object.values(reusableByPage).reduce(
+    (s, arr) => s + arr.length,
+    0,
   );
 
-  // ── 3. Recent implementations ──
+  // ── 4. Recent implementations ──
   const recentImplementations: RecentImplementation[] = [];
-  for (const issue of issues.slice(0, 20)) {
+  for (const issue of filtered.slice(0, 30)) {
+    const page = classifyIssueToPage(issue);
     if (issue.commits.length > 0) {
       const latestCommit = issue.commits[0];
       recentImplementations.push({
-        featureArea:
-          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        featureArea: page,
         issueId: issue.issueKey,
+        issueType: issue.issueType,
         commitId: latestCommit.id,
         url: latestCommit.url,
         description: issue.summary,
@@ -1245,9 +1583,9 @@ export const calculateCodeIntelligence = (
       });
     } else {
       recentImplementations.push({
-        featureArea:
-          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        featureArea: page,
         issueId: issue.issueKey,
+        issueType: issue.issueType,
         commitId: "",
         url: "",
         description: issue.summary,
@@ -1256,10 +1594,14 @@ export const calculateCodeIntelligence = (
     }
   }
 
-  // ── 4. Duplicate / overlap detection ──
+  // ── 5. Duplicate / overlap detection ──
   const duplicateDetection: DuplicateDetection[] = [];
-  const issuesBySummary = new Map<string, string[]>();
-  for (const issue of issues) {
+  // Summary similarity
+  const issuesBySummary = new Map<
+    string,
+    { keys: string[]; types: string[] }
+  >();
+  for (const issue of filtered) {
     const normalized = issue.summary
       .toLowerCase()
       .replace(/[^a-z0-9 ]/g, "")
@@ -1268,137 +1610,205 @@ export const calculateCodeIntelligence = (
       .sort()
       .join(" ");
     const key = normalized.substring(0, 60);
-    if (!issuesBySummary.has(key)) issuesBySummary.set(key, []);
-    issuesBySummary.get(key)!.push(issue.issueKey);
+    if (!issuesBySummary.has(key))
+      issuesBySummary.set(key, { keys: [], types: [] });
+    const entry = issuesBySummary.get(key)!;
+    entry.keys.push(issue.issueKey);
+    entry.types.push(issue.issueType);
   }
-  for (const [, keys] of issuesBySummary) {
+  for (const [, { keys, types }] of issuesBySummary) {
     if (keys.length >= 2) {
       duplicateDetection.push({
         issueIds: keys,
-        similarityReason: "Similar summary text and likely duplicate work",
+        issueTypes: types,
+        similarityReason:
+          "Similar summary text — likely duplicate or overlapping Story/Epic",
         risk:
           keys.length >= 3
-            ? "High — significant wasted effort"
+            ? "High — significant wasted effort across multiple Stories/Epics"
             : "Medium — potential redundancy",
         recommendation: `Review ${keys.join(", ")} for consolidation or deduplication`,
       });
     }
   }
-  // Component-based overlap
-  const componentIssues = new Map<string, string[]>();
-  for (const issue of issues) {
+  // Component concentration
+  const componentIssues = new Map<
+    string,
+    { keys: string[]; types: string[] }
+  >();
+  for (const issue of filtered) {
     for (const comp of issue.components) {
-      if (!componentIssues.has(comp)) componentIssues.set(comp, []);
-      componentIssues.get(comp)!.push(issue.issueKey);
+      if (!componentIssues.has(comp))
+        componentIssues.set(comp, { keys: [], types: [] });
+      const e = componentIssues.get(comp)!;
+      e.keys.push(issue.issueKey);
+      e.types.push(issue.issueType);
     }
   }
-  for (const [comp, keys] of componentIssues) {
+  for (const [comp, { keys, types }] of componentIssues) {
     if (keys.length >= 5) {
       duplicateDetection.push({
-        issueIds: keys.slice(0, 5),
-        similarityReason: `${keys.length} issues touch component "${comp}" — possible architectural issue`,
+        issueIds: keys.slice(0, 6),
+        issueTypes: types.slice(0, 6),
+        similarityReason: `${keys.length} Stories/Epics touch component "${comp}" — possible overlap or shared implementation`,
         risk: "Medium — high concentration suggests shared root cause",
-        recommendation: `Investigate "${comp}" for shared defects or design improvements`,
+        recommendation: `Investigate "${comp}" for shared services, refactoring opportunities, or design improvements`,
+      });
+    }
+  }
+  // Cross-page overlap (same files modified in different page areas)
+  const fileToPages = new Map<string, Set<string>>();
+  for (const issue of filtered) {
+    const page = classifyIssueToPage(issue);
+    for (const c of issue.commits) {
+      for (const f of c.files) {
+        if (!fileToPages.has(f)) fileToPages.set(f, new Set());
+        fileToPages.get(f)!.add(page);
+      }
+    }
+  }
+  for (const [file, pages] of fileToPages) {
+    if (pages.size >= 3) {
+      duplicateDetection.push({
+        issueIds: Array.from(pages),
+        issueTypes: [],
+        similarityReason: `File "${file.split("/").pop()}" modified across ${pages.size} page areas (${Array.from(pages).join(", ")}) — cross-cutting concern`,
+        risk: "Medium — shared file changes create coupling risk",
+        recommendation: `Consider extracting shared logic from this file into a dedicated utility or service`,
       });
     }
   }
 
-  // ── 5. Developer insights ──
+  // ── 6. Developer insights ──
   const developerInsights: DeveloperInsight[] = [];
   for (const [dev, info] of devCommitMap) {
     if (dev === "Unassigned") continue;
-    const areas = new Set<string>();
+    const expertiseAreas = Array.from(info.areas).slice(0, 4);
+    // Also include file-level areas
+    const fileDirs = new Set<string>();
     for (const f of info.files) {
       const parts = f.split("/");
-      if (parts.length >= 2) areas.add(parts.slice(0, 2).join("/"));
+      if (parts.length >= 2) fileDirs.add(parts.slice(0, 2).join("/"));
     }
-    // Also add components from their issues
-    for (const issueKey of info.issues) {
-      const iss = issues.find((i) => i.issueKey === issueKey);
-      if (iss) iss.components.forEach((c) => areas.add(c));
-    }
+    const allAreas = [...expertiseAreas, ...Array.from(fileDirs).slice(0, 2)];
+    const uniqueAreas = [...new Set(allAreas)].slice(0, 4);
+
     developerInsights.push({
       developer: dev,
-      expertiseArea: Array.from(areas).slice(0, 3).join(", ") || "General",
+      expertiseArea: uniqueAreas.join(", ") || "General",
       notableCommits: info.commits.slice(0, 5),
       recommendation:
         info.issues.size >= 5
-          ? `${dev} is a key contributor (${info.issues.size} issues). Ensure knowledge sharing to reduce bus factor.`
-          : `${dev} contributed to ${info.issues.size} issue(s). Consider pairing for skill growth.`,
+          ? `${dev} is a key contributor across ${info.issues.size} issues (${expertiseAreas.join(", ")}). Ensure knowledge sharing to reduce bus factor.`
+          : info.commits.length > 0
+            ? `${dev} contributed ${info.commits.length} commits across ${info.issues.size} issue(s). Consider pairing in ${expertiseAreas[0] || "relevant area"} for skill growth.`
+            : `${dev} assigned to ${info.issues.size} issue(s) with no linked commits. Verify commit linking for traceability.`,
     });
   }
   developerInsights.sort(
     (a, b) => b.notableCommits.length - a.notableCommits.length,
   );
 
-  // ── 6. AI recommendations ──
+  // ── 7. AI recommendations ──
   const aiRecommendations: CodeIntelRecommendation[] = [];
-  if (reusableComponents.length > 0) {
-    const top = reusableComponents[0];
+  // Top reusable module recommendation
+  const allReusable = Object.entries(reusableByPage).flatMap(([page, comps]) =>
+    comps.map((c) => ({ ...c, page })),
+  );
+  const highReusable = allReusable.filter((c) => c.reusabilityScore === "High");
+  if (highReusable.length > 0) {
+    const top = highReusable[0];
     aiRecommendations.push({
-      headline: `Consolidate "${top.componentName}" to reduce dev effort by ~${Math.min(30, top.relatedIssues.length * 8)}%`,
-      component: top.componentName,
+      headline: `Reuse "${top.componentName}" in ${top.page} to reduce dev effort by ~${Math.min(35, top.relatedIssues.length * 8)}%`,
+      component: `${top.page} / ${top.componentName}`,
+      mappedModule: top.page,
       action: top.recommendedUsage,
-      expectedBenefit: `Eliminates redundancy across ${top.relatedIssues.length} issues`,
+      expectedBenefit: `Eliminates redundancy across ${top.relatedIssues.length} Stories/Epics in ${top.page}`,
     });
   }
   if (duplicateDetection.length > 0) {
     aiRecommendations.push({
-      headline: `${duplicateDetection.length} potential duplicate/overlap clusters detected`,
+      headline: `${duplicateDetection.length} duplicate/overlap clusters detected — consolidate to save effort`,
       component: "Cross-cutting",
-      action: "Review flagged issue clusters for consolidation",
-      expectedBenefit: "Reduce wasted effort and improve delivery speed",
+      mappedModule: "Cross-cutting",
+      action:
+        "Review flagged Story/Epic clusters and deduplicate overlapping implementations",
+      expectedBenefit: `Reduce wasted effort across ${duplicateDetection.reduce((s, d) => s + d.issueIds.length, 0)} related items`,
+    });
+  }
+  // Page with most issues — architectural concern
+  const sortedPages = [...issuesByPage.entries()].sort(
+    (a, b) => b[1].length - a[1].length,
+  );
+  if (sortedPages.length > 0 && sortedPages[0][1].length >= 5) {
+    const [topPage, topPageIssues] = sortedPages[0];
+    aiRecommendations.push({
+      headline: `${topPage} has ${topPageIssues.length} resolved Stories/Epics — review for architectural stability`,
+      component: topPage,
+      mappedModule: topPage,
+      action: `Perform a focused code review on ${topPage} area to identify structural improvements`,
+      expectedBenefit: `Reduce future defect rate in ${topPage} by proactive refactoring`,
     });
   }
   if (developerInsights.length > 0) {
     const topDev = developerInsights[0];
-    aiRecommendations.push({
-      headline: `Distribute knowledge from ${topDev.developer} — single-point-of-failure risk`,
-      component: topDev.expertiseArea,
-      action: "Schedule pair programming or knowledge sharing sessions",
-      expectedBenefit: "Reduce bus factor and improve team resilience",
-    });
+    if (topDev.notableCommits.length >= 3) {
+      aiRecommendations.push({
+        headline: `Distribute knowledge from ${topDev.developer} — single-point-of-failure risk`,
+        component: topDev.expertiseArea,
+        mappedModule: topDev.expertiseArea.split(", ")[0] || "General",
+        action: "Schedule pair programming or knowledge sharing sessions",
+        expectedBenefit: "Reduce bus factor and improve team resilience",
+      });
+    }
   }
   if (!hasDevInfo) {
     aiRecommendations.push({
-      headline: "Enable GitHub integration for richer commit analysis",
+      headline: "Enable GitHub integration for file-level commit analysis",
       component: "DevOps",
+      mappedModule: "DevOps",
       action:
         "Link GitHub repositories to Jira via Development panel or Jira app",
       expectedBenefit:
-        "Unlock file-level reusability analysis and commit tracking",
+        "Unlock file-level reusability analysis, commit tracking, and PR insights",
     });
   }
 
   // ── Executive summary ──
+  const pageNames = [...issuesByPage.keys()];
   const summaryParts: string[] = [];
   summaryParts.push(
-    `Analyzed ${issues.length} recently resolved issues with ${totalCommits} linked commits and ${totalPRs} PRs.`,
+    `Analyzed ${filtered.length} recently resolved Stories & Epics across ${pageNames.length} page/module areas with ${totalCommits} linked commits and ${totalPRs} PRs.`,
   );
-  if (reusableComponents.length > 0)
+  if (totalReusableCount > 0)
     summaryParts.push(
-      `Found ${reusableComponents.length} potential reusable components/modules.`,
+      `Identified ${totalReusableCount} reusable components across ${Object.keys(reusableByPage).length} modules (${Object.keys(reusableByPage).slice(0, 4).join(", ")}).`,
     );
   if (duplicateDetection.length > 0)
     summaryParts.push(
       `Detected ${duplicateDetection.length} overlap/duplication clusters requiring review.`,
     );
+  if (highReusable.length > 0)
+    summaryParts.push(
+      `${highReusable.length} high-reusability components found — prioritize extraction to reduce future development effort.`,
+    );
   if (!hasDevInfo)
     summaryParts.push(
-      "No GitHub commit data available — analysis based on Jira metadata only.",
+      "No GitHub commit data available — analysis based on Jira metadata only. Link GitHub for richer insights.",
     );
 
   return {
     executiveSummary: summaryParts.join(" "),
-    reusableComponents: reusableComponents.slice(0, 15),
-    recentImplementations: recentImplementations.slice(0, 20),
-    duplicateDetection: duplicateDetection.slice(0, 10),
+    reusableComponents: reusableByPage,
+    recentImplementations: recentImplementations.slice(0, 30),
+    duplicateDetection: duplicateDetection.slice(0, 15),
     aiRecommendations,
-    developerInsights: developerInsights.slice(0, 15),
-    totalIssuesAnalyzed: issues.length,
+    developerInsights: developerInsights.slice(0, 20),
+    totalIssuesAnalyzed: filtered.length,
     totalCommits,
     totalPRs,
     hasDevInfo,
+    totalReusableCount,
   };
 };
 

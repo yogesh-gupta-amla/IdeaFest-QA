@@ -181,29 +181,35 @@ const OverburntItems: React.FC = () => {
       ),
     },
     {
-      title: "Est (h)",
+      title: "Estimate",
       dataIndex: "originalEstimate",
-      width: 65,
+      width: 75,
       sorter: (a, b) => a.originalEstimate - b.originalEstimate,
-      render: (v: number) => (
-        <span style={{ color: "var(--qa-text-secondary)" }}>{v}h</span>
-      ),
+      render: (v: number) => {
+        const label = v < 1 ? `${Math.round(v * 60)}m` : `${v}h`;
+        return (
+          <span style={{ color: "var(--qa-text-secondary)" }}>{label}</span>
+        );
+      },
     },
     {
-      title: "Spent (h)",
+      title: "Spent",
       dataIndex: "timeSpent",
-      width: 70,
+      width: 75,
       sorter: (a, b) => a.timeSpent - b.timeSpent,
-      render: (v: number, row) => (
-        <span
-          style={{
-            color: v > row.originalEstimate ? "#ff4d4f" : "#52c41a",
-            fontWeight: 600,
-          }}
-        >
-          {v}h
-        </span>
-      ),
+      render: (v: number, row) => {
+        const label = v < 1 ? `${Math.round(v * 60)}m` : `${v}h`;
+        return (
+          <span
+            style={{
+              color: v > row.originalEstimate ? "#ff4d4f" : "#52c41a",
+              fontWeight: 600,
+            }}
+          >
+            {label}
+          </span>
+        );
+      },
     },
     {
       title: "Overburn %",

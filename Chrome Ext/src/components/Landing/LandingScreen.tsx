@@ -128,7 +128,7 @@ export default function LandingScreen({
             InSights AI
           </h1>
           <p className="text-sm font-medium" style={{ color: "#64748b" }}>
-            AI-Powered QA Dashboard
+            AI-Powered Dashboard
           </p>
 
           {/* Feature pills */}

@@ -27,7 +27,7 @@ export const downloadChartAsPNG = async (
 
 export const exportDashboardToPDF = async (
   containerId: string,
-  title = "QA Dashboard Report",
+  title = "Intelligence Dashboard Report",
 ): Promise<void> => {
   const el = document.getElementById(containerId);
   if (!el) return;

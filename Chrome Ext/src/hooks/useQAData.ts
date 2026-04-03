@@ -34,18 +34,29 @@ export const useQAIssues = () => {
 export const useProjectHealth = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
+  const ageingIssues = useDashboardStore((s) => s.ageingIssues);
   const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
   const issues = useFilteredIssues();
   const resolvedQA = useMemo(
     () => mapJiraIssuesToQA(recentlyResolved),
     [recentlyResolved],
   );
+  const ageingQA = useMemo(
+    () => mapJiraIssuesToQA(ageingIssues),
+    [ageingIssues],
+  );
   const data = useMemo(
     () =>
       projectDataLoaded
-        ? calculateProjectHealth(issues, resolvedQA, queryTimeRange)
+        ? calculateProjectHealth(
+            issues,
+            resolvedQA,
+            queryTimeRange,
+            undefined,
+            ageingQA,
+          )
         : null,
-    [projectDataLoaded, issues, queryTimeRange, resolvedQA],
+    [projectDataLoaded, issues, queryTimeRange, resolvedQA, ageingQA],
   );
   return { data, isLoading: !projectDataLoaded, error: null };
 };

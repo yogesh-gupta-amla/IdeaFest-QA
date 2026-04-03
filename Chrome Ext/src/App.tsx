@@ -5,7 +5,7 @@ import { storageGet, storageSet } from "./services/chromeStorage";
 import {
   validateAuth,
   fetchProjects,
-  fetchJiraIssues,
+  fetchAllPages,
   fetchActiveSprint,
   fetchDevInfo,
 } from "./services/jiraService";
@@ -14,6 +14,7 @@ import type {
   AuthMode,
   JiraUser,
   JiraProject,
+  JiraIssue,
   Metrics,
   ManualEntry,
   QANote,
@@ -24,11 +25,13 @@ import LoadingOverlay from "./components/common/LoadingOverlay";
 import { useDashboardStore } from "./store/useStore";
 import { QA_THEMES, applyTheme } from "./themes";
 import Toast from "./components/common/Toast";
+import type { QueryTimeRange } from "./utils/queryTimeRange";
 import {
   getCreatedTimeRangeClause,
   getResolvedTimeRangeClause,
-  type QueryTimeRange,
+  getWorklogTimeRangeClause,
 } from "./utils/queryTimeRange";
+import type { DateRange } from "./utils/queryTimeRange";
 import LandingScreen from "./components/Landing/LandingScreen";
 
 export default function App() {
@@ -39,8 +42,11 @@ export default function App() {
     showToast,
     loading,
     loadingText,
+    loadingProgress,
     showLoading,
     hideLoading,
+    setLoadingProgress,
+    setLoadingText,
   } = useApp();
 
   // Auth state
@@ -225,8 +231,7 @@ export default function App() {
     async (projectKey: string, projectName: string) => {
       const store = useDashboardStore.getState();
       const timeRange = store.queryTimeRange;
-      const createdRangeClause = getCreatedTimeRangeClause(timeRange);
-      const resolvedRangeClause = getResolvedTimeRangeClause(timeRange);
+      const dateRange = store.dateRange;
 
       setSelectedProjectKey(projectKey);
       setSelectedProjectName(projectName);
@@ -236,105 +241,137 @@ export default function App() {
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
       store.setAgeingIssues([]);
+      store.setActiveIssues([]);
       store.setOverburntIssues([]);
       store.setEarlyCompletionIssues([]);
       store.setCodeIntelIssues([]);
 
-      showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
+      showLoading(`Fetching all data for ${projectKey}…`);
 
       const token = authMode === "token" ? authToken : null;
 
-      const [
-        openResult,
-        todayResult,
-        resolvedResult,
-        recentResolvedResult,
-        ageingResult,
-        overburntResult,
-        earlyCompletionResult,
-        codeIntelResult,
-        sprintResult,
-      ] = await Promise.all([
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND resolution = Unresolved AND ${createdRangeClause} ORDER BY priority ASC, created DESC`,
-          2000,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND ${createdRangeClause} ORDER BY priority ASC, created DESC`,
-          200,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND ${resolvedRangeClause} ORDER BY resolved DESC`,
-          200,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND ${resolvedRangeClause} ORDER BY resolved DESC`,
-          500,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") AND ${createdRangeClause} ORDER BY created DESC`,
-          500,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND ${timeRange === "today" ? "worklogDate >= startOfDay()" : "worklogDate >= -7d"} ORDER BY updated DESC`,
-          500,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0 AND ${resolvedRangeClause} ORDER BY resolved DESC`,
-          500,
-          token,
-        ),
-        fetchJiraIssues(
-          jiraUrl,
-          `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Task, Sub-task, Epic, Bug, Defect) AND ${resolvedRangeClause} ORDER BY resolved DESC`,
-          300,
-          token,
-        ),
-        fetchActiveSprint(jiraUrl, projectKey, token),
-      ]);
+      // Progress callback — updates the loading overlay with live counts
+      const onProgress = (fetched: number, total: number, label: string) => {
+        setLoadingProgress({ fetched, total, label });
+        setLoadingText(`Fetching ${label} for ${projectKey}…`);
+      };
 
-      hideLoading();
+      // ── Build time-range clauses from the header selection ──
+      const createdClause = getCreatedTimeRangeClause(timeRange, dateRange);
+      const resolvedClause = getResolvedTimeRangeClause(timeRange, dateRange);
+      const worklogClause = getWorklogTimeRangeClause(timeRange, dateRange);
 
-      if (!openResult.success) {
-        showToast(openResult.error || "Failed to fetch issues", "error");
-        return;
+      // Helper to inject an optional AND clause into JQL
+      const and = (clause: string) => (clause ? ` AND ${clause}` : "");
+
+      // ── Define all JQL queries ──
+      // All queries use fetchAllPages (isLast loop) for full pagination.
+      // Ageing is always lifetime (no date filter). Others respect Lifetime/Custom.
+      const queries = {
+        open: {
+          jql: `project = "${projectKey}" AND resolution = Unresolved${and(createdClause)} ORDER BY priority ASC, created DESC`,
+          label: "Open Issues",
+        },
+        created: {
+          jql: `project = "${projectKey}"${and(createdClause)} ORDER BY priority ASC, created DESC`,
+          label: "Created Issues",
+        },
+        resolved: {
+          jql: `project = "${projectKey}"${and(resolvedClause)} ORDER BY resolved DESC`,
+          label: "Resolved Issues",
+        },
+        recentResolved: {
+          jql: `project = "${projectKey}"${and(resolvedClause)} ORDER BY resolved DESC`,
+          label: "Recently Resolved",
+        },
+        ageing: {
+          jql: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") ORDER BY created DESC`,
+          label: "Ageing Critical/Blockers",
+        },
+        activeIssues: {
+          jql: `project = "${projectKey}" AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") AND issuetype IN (Bug, Defect) ORDER BY created DESC`,
+          label: "Total Active Issues",
+        },
+        overburnt: {
+          jql: `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task)${and(worklogClause)} ORDER BY updated DESC`,
+          label: "Overburnt Items",
+        },
+        earlyCompletion: {
+          jql: `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0${and(resolvedClause)} ORDER BY resolved DESC`,
+          label: "Early Completions",
+        },
+        codeIntel: {
+          jql: `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Epic)${and(resolvedClause)} ORDER BY resolved DESC`,
+          label: "Code Intelligence",
+        },
+      };
+
+      // ── Fetch all queries sequentially with progress ──
+      // Each uses fetchAllPages which loops until isLast === true
+      const results: Record<
+        string,
+        {
+          success: boolean;
+          issues?: JiraIssue[];
+          total?: number;
+          error?: string;
+        }
+      > = {};
+
+      for (const [key, q] of Object.entries(queries)) {
+        setLoadingText(`Fetching ${q.label} for ${projectKey}…`);
+        setLoadingProgress(null); // reset per-query progress
+        results[key] = await fetchAllPages(
+          jiraUrl,
+          q.jql,
+          token,
+          onProgress,
+          q.label,
+        );
+
+        // Stop early if the first critical query fails
+        if (key === "open" && !results[key].success) {
+          hideLoading();
+          showToast(results[key].error || "Failed to fetch issues", "error");
+          return;
+        }
       }
 
-      const openIssues = openResult.issues || [];
-      const todayCreated = todayResult.success ? todayResult.issues || [] : [];
-      const todayResolved = resolvedResult.success
-        ? resolvedResult.issues || []
+      // ── Fetch sprint info in parallel (it's a single lightweight call) ──
+      setLoadingText(`Fetching sprint info for ${projectKey}…`);
+      setLoadingProgress(null);
+      const sprintResult = await fetchActiveSprint(jiraUrl, projectKey, token);
+
+      // ── Extract results ──
+      const openIssues = results.open.issues || [];
+      const todayCreated = results.created.success
+        ? results.created.issues || []
         : [];
-      const recentlyResolved = recentResolvedResult.success
-        ? recentResolvedResult.issues || []
+      const todayResolved = results.resolved.success
+        ? results.resolved.issues || []
         : [];
-      const ageingIssues = ageingResult.success
-        ? ageingResult.issues || []
+      const recentlyResolved = results.recentResolved.success
+        ? results.recentResolved.issues || []
         : [];
-      const overburntIssues = overburntResult.success
-        ? overburntResult.issues || []
+      const ageingIssues = results.ageing.success
+        ? results.ageing.issues || []
         : [];
-      const earlyCompletionIssues = earlyCompletionResult.success
-        ? earlyCompletionResult.issues || []
+      const activeIssues = results.activeIssues.success
+        ? results.activeIssues.issues || []
         : [];
-      const codeIntelRawIssues = codeIntelResult.success
-        ? codeIntelResult.issues || []
+      const overburntIssues = results.overburnt.success
+        ? results.overburnt.issues || []
+        : [];
+      const earlyCompletionIssues = results.earlyCompletion.success
+        ? results.earlyCompletion.issues || []
+        : [];
+      const codeIntelRawIssues = results.codeIntel.success
+        ? results.codeIntel.issues || []
         : [];
 
       // ── Enrich code intel issues with dev-status (commits/PRs) ──
+      setLoadingText(`Fetching dev info (commits/PRs)…`);
+      setLoadingProgress(null);
       const codeIntelIssueIds = codeIntelRawIssues
         .filter((i) => i.id)
         .map((i) => i.id);
@@ -389,12 +426,14 @@ export default function App() {
         pullRequests: devInfoMap[issue.id]?.pullRequests || [],
       }));
 
+      hideLoading();
+
       // Load snapshot for trends
       const todayStr = new Date().toISOString().slice(0, 10);
       const prevDate = new Date();
       prevDate.setDate(prevDate.getDate() - 1);
       const prevStr = prevDate.toISOString().slice(0, 10);
-      const snapKey = (d: string) => `snap_${projectKey}_${timeRange}_${d}`;
+      const snapKey = (d: string) => `snap_${projectKey}_${d}`;
       const snaps = await storageGet([snapKey(prevStr), snapKey(todayStr)]);
       const prevM = (snaps[snapKey(prevStr)] as SnapshotMetrics) || null;
       setPrevMetrics(prevM);
@@ -403,11 +442,12 @@ export default function App() {
       setMetrics(m);
       setShowDashboard(true);
 
-      // Store metrics in QA dashboard store and navigate to overview tab
+      // Store metrics in QA dashboard store
       store.setProjectData(projectKey, projectName, m, prevM);
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
       store.setAgeingIssues(ageingIssues);
+      store.setActiveIssues(activeIssues);
       store.setOverburntIssues(overburntIssues);
       store.setEarlyCompletionIssues(earlyCompletionIssues);
       store.setCodeIntelIssues(codeIntelIssues);
@@ -431,20 +471,36 @@ export default function App() {
         },
       });
 
-      showToast(`Loaded ${timeRange} data for ${projectKey}`, "success");
+      // Summary toast
+      const totalFetched = Object.values(results).reduce(
+        (sum, r) => sum + (r.issues?.length || 0),
+        0,
+      );
+      showToast(
+        `Loaded ${totalFetched.toLocaleString()} issues for ${projectKey}`,
+        "success",
+      );
 
       // Navigate to sidebar dashboard
       setShowQADashboard(true);
     },
-    [authMode, authToken, jiraUrl, showLoading, hideLoading, showToast],
+    [
+      authMode,
+      authToken,
+      jiraUrl,
+      showLoading,
+      hideLoading,
+      showToast,
+      setLoadingProgress,
+      setLoadingText,
+    ],
   );
 
   const handleTimeRangeChange = useCallback(
     async (timeRange: QueryTimeRange) => {
       const store = useDashboardStore.getState();
-      if (store.queryTimeRange === timeRange) return;
-
       store.setQueryTimeRange(timeRange);
+      store.setDateRange(null);
 
       if (selectedProjectKey && selectedProjectName) {
         await handleLoadProject(selectedProjectKey, selectedProjectName);
@@ -489,7 +545,11 @@ export default function App() {
   if (showQADashboard) {
     return (
       <>
-        <LoadingOverlay visible={loading} text={loadingText} />
+        <LoadingOverlay
+          visible={loading}
+          text={loadingText}
+          progress={loadingProgress}
+        />
         <Toast toast={toast} />
         <QADashboard
           projects={projects}
@@ -511,7 +571,11 @@ export default function App() {
 
   return (
     <>
-      <LoadingOverlay visible={loading} text={loadingText} />
+      <LoadingOverlay
+        visible={loading}
+        text={loadingText}
+        progress={loadingProgress}
+      />
       <Toast toast={toast} />
       <LandingScreen
         jiraUrl={jiraUrl}

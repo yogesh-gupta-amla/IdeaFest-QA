@@ -20,7 +20,6 @@ import type {
   SnapshotMetrics,
   Theme,
 } from "./types";
-import LandingScreen from "./components/Landing/LandingScreen";
 import LoadingOverlay from "./components/common/LoadingOverlay";
 import { useDashboardStore } from "./store/useStore";
 import { QA_THEMES, applyTheme } from "./themes";
@@ -30,6 +29,7 @@ import {
   getResolvedTimeRangeClause,
   type QueryTimeRange,
 } from "./utils/queryTimeRange";
+import LandingScreen from "./components/Landing/LandingScreen";
 
 export default function App() {
   const {
@@ -480,26 +480,8 @@ export default function App() {
 
   if (initializing) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          background: "#0d1117",
-        }}
-      >
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            border: "3px solid #334155",
-            borderTop: "3px solid #6366f1",
-            borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
-          }}
-        />
-        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      <div className="flex justify-center items-center h-screen bg-[#0d1117]">
+        <div className="spinner" />
       </div>
     );
   }

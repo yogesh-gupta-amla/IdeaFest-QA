@@ -20,7 +20,11 @@
     "service_worker": "background.js"
   },
   "permissions": ["storage", "tabs"],
-  "host_permissions": ["https://*.atlassian.net/"],
+  "host_permissions": [
+    "https://*.atlassian.net/",
+    "https://generativelanguage.googleapis.com/*",
+    "https://*.googleapis.com/*"
+  ],
   "web_accessible_resources": [
     {
       "resources": ["dashboard.html", "dashboard.css", "dashboard.js", "lib/*"],

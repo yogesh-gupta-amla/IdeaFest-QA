@@ -15,6 +15,9 @@ import type {
   AIPrioritizedFix,
   AIRiskPrediction,
   AIProjectAnalysis,
+  AIOverutilizedResource,
+  AIUnderutilizedResource,
+  AIResourceOptimizationRecommendation,
 } from "../../types/qa";
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -404,7 +407,8 @@ const AIRecommendations: React.FC = () => {
   }
 
   if (error) {
-    return <Alert type="error" message="Failed to generate AI analysis" />;
+    const errMsg = typeof error === "string" ? error : (error && (error as any).message) || String(error);
+    return <Alert type="error" message="Failed to generate AI analysis" description={errMsg} />;
   }
 
   if (!analysis) {
@@ -687,7 +691,7 @@ const AIRecommendations: React.FC = () => {
       <div style={{ marginBottom: 24 }}>
         <SectionTitle icon={<WarningOutlined />} title="Immediate Actions" />
         <Row gutter={[16, 16]}>
-          {analysis.aiInsightsPanel.immediateActions.map((action) => (
+          {analysis.aiInsightsPanel.immediateActions.map((action: AIImmediateAction) => (
             <Col key={action.issue} xs={24} lg={12} xl={6}>
               <ActionCard action={action} />
             </Col>
@@ -698,7 +702,7 @@ const AIRecommendations: React.FC = () => {
       <div style={{ marginBottom: 24 }}>
         <SectionTitle icon={<RiseOutlined />} title="Risks And Predictions" />
         <Row gutter={[16, 16]}>
-          {analysis.aiInsightsPanel.risksAndPredictions.map((risk) => (
+          {analysis.aiInsightsPanel.risksAndPredictions.map((risk: AIRiskPrediction) => (
             <Col key={risk.risk} xs={24} xl={8}>
               <RiskCard risk={risk} />
             </Col>
@@ -714,7 +718,7 @@ const AIRecommendations: React.FC = () => {
               title="Overutilized Resources"
               emptyText="No owner is materially above team-average load in the current window."
               items={analysis.aiInsightsPanel.resourceSuggestions.overutilizedResources.map(
-                (resource) => ({
+                (resource: AIOverutilizedResource) => ({
                   name: resource.name,
                   utilizationPercentage: resource.utilizationPercentage,
                   summary: resource.risk,
@@ -728,7 +732,7 @@ const AIRecommendations: React.FC = () => {
               title="Underutilized Resources"
               emptyText="No meaningful spare capacity signal was detected for the current open queue."
               items={analysis.aiInsightsPanel.resourceSuggestions.underutilizedResources.map(
-                (resource) => ({
+                (resource: AIUnderutilizedResource) => ({
                   name: resource.name,
                   utilizationPercentage: resource.utilizationPercentage,
                   summary: resource.opportunity,
@@ -746,7 +750,7 @@ const AIRecommendations: React.FC = () => {
           title="Optimization Tips"
         />
         <Row gutter={[16, 16]}>
-          {analysis.aiInsightsPanel.optimizationTips.map((tip) => (
+          {analysis.aiInsightsPanel.optimizationTips.map((tip: AIOptimizationTip) => (
             <Col key={tip.area} xs={24} md={12} xl={6}>
               <TipCard tip={tip} />
             </Col>
@@ -760,7 +764,7 @@ const AIRecommendations: React.FC = () => {
           title="Resource Optimization Recommendations"
         />
         <Row gutter={[16, 16]}>
-          {analysis.resourceOptimizationRecommendations.map((item) => (
+          {analysis.resourceOptimizationRecommendations.map((item: AIResourceOptimizationRecommendation) => (
             <Col key={item.problem} xs={24} md={12}>
               <Card
                 style={{
@@ -808,7 +812,7 @@ const AIRecommendations: React.FC = () => {
       <div>
         <SectionTitle icon={<RobotOutlined />} title="Prioritized Fixes" />
         <Row gutter={[16, 16]}>
-          {analysis.prioritizedFixes.map((fix) => (
+          {analysis.prioritizedFixes.map((fix: AIPrioritizedFix) => (
             <Col key={`${fix.priorityRank}-${fix.fix}`} xs={24} md={8}>
               <FixCard fix={fix} />
             </Col>

@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useDashboardStore } from "../store/useStore";
 import { filterIssues } from "../utils/qaCalculations";
 import { mapJiraIssuesToQA } from "../utils/jiraToQA";
 import { generateAIProjectAnalysis } from "../utils/aiAnalysis";
+import { callGemini } from "../services/geminiService";
+import { buildGeminiPromptFromAnalysis } from "../utils/geminiPrompt";
 import {
   calculateProjectHealth,
   calculateAgeingAnalysis,
@@ -109,26 +111,122 @@ export const useAIRecommendations = () => {
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
   const projectMetrics = useDashboardStore((s) => s.projectMetrics);
   const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
-  const data = useMemo(() => {
-    if (!projectDataLoaded || !projectMetrics) return null;
-    return generateAIProjectAnalysis({
-      projectKey,
-      projectName,
-      sprintName,
-      timeRange: queryTimeRange,
-      metrics: projectMetrics,
-      openIssues: rawIssues,
-      recentlyResolved,
-    });
+
+  const [data, setData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(!projectDataLoaded);
+  const [error, setError] = useState<any>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectDataLoaded || !projectMetrics) {
+      setData(null);
+      setIsLoading(!projectDataLoaded);
+      setError(null);
+      return;
+    }
+
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+
+      const base = generateAIProjectAnalysis({
+        projectKey,
+        projectName,
+        sprintName,
+        timeRange: queryTimeRange,
+        metrics: projectMetrics,
+        openIssues: rawIssues,
+        recentlyResolved,
+      });
+
+      if (!cancelled) setData(base);
+
+      try {
+        const prompt = buildGeminiPromptFromAnalysis(base);
+        const geminiRaw = await callGemini(prompt, {
+          model: "gemini-flash-latest",
+          // do not pass a too-short timeout from here; let service default be used
+          timeoutMs: 60000,
+        });
+
+        // tolerant JSON extraction: model may return text that contains JSON with
+        // surrounding whitespace or extra characters. Try to extract a JSON blob.
+        const tryParseJsonFromText = (text: string): any | null => {
+          if (!text) return null;
+          try {
+            return JSON.parse(text);
+          } catch {}
+          const first = text.indexOf("{");
+          const last = text.lastIndexOf("}");
+          if (first !== -1 && last !== -1 && last > first) {
+            const possible = text.slice(first, last + 1);
+            try {
+              return JSON.parse(possible);
+            } catch {}
+          }
+          const fArr = text.indexOf("[");
+          const lArr = text.lastIndexOf("]");
+          if (fArr !== -1 && lArr !== -1 && lArr > fArr) {
+            const possibleArr = text.slice(fArr, lArr + 1);
+            try {
+              return JSON.parse(possibleArr);
+            } catch {}
+          }
+          return null;
+        };
+
+        let parsed: any = null;
+        if (typeof geminiRaw === "string") parsed = tryParseJsonFromText(geminiRaw);
+        else parsed = geminiRaw;
+
+        const enriched = {
+          ...base,
+          executiveSummary: parsed?.summary ?? base.executiveSummary,
+          aiRecommendation: {
+            ...base.aiRecommendation,
+            headline: parsed?.headline ?? base.aiRecommendation.headline,
+          },
+          _aiGeneratedRaw: geminiRaw,
+          _aiGeneratedParsed: parsed,
+        };
+
+        if (!cancelled) {
+          setData(enriched);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          // If we have a deterministic base analysis, prefer to keep showing it
+          // and avoid surfacing a blocking error to the UI. Log the enrichment
+          // failure for diagnostics. If base was not produced, surface the error.
+          if (base) {
+            // store debug info but don't mark as fatal
+            // eslint-disable-next-line no-console
+            console.warn("Gemini enrichment failed:", e);
+            // attach raw error to data for optional UI debug without marking error
+            if (!cancelled) setData({ ...base, _aiEnrichError: String(e) });
+          } else {
+            setError(e as any);
+          }
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     projectDataLoaded,
     projectKey,
-    projectMetrics,
     projectName,
-    queryTimeRange,
+    sprintName,
     rawIssues,
     recentlyResolved,
-    sprintName,
+    projectMetrics,
+    queryTimeRange,
   ]);
-  return { data, isLoading: !projectDataLoaded, error: null };
+
+  return { data, isLoading, error };
 };

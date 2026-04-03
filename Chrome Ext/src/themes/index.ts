@@ -244,6 +244,15 @@ export const QA_THEMES: ThemeConfig[] = [
   },
 ];
 
+/** Convert a 6-digit hex colour to rgba(r, g, b, alpha) */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = (hex ?? "#888888").replace("#", "").padEnd(6, "0");
+  const r = parseInt(h.slice(0, 2), 16) || 128;
+  const g = parseInt(h.slice(2, 4), 16) || 128;
+  const b = parseInt(h.slice(4, 6), 16) || 128;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export const getAntdTheme = (themeConfig: ThemeConfig) => {
   const isDark = themeConfig.isDark;
   return {
@@ -275,6 +284,8 @@ export const getAntdTheme = (themeConfig: ThemeConfig) => {
 
 export const applyTheme = (themeConfig: ThemeConfig) => {
   const root = document.documentElement;
+  // Sync data-theme attr so [data-theme="light"] / [data-theme="dark"] CSS rules activate
+  root.setAttribute("data-theme", themeConfig.isDark ? "dark" : "light");
   Object.entries(themeConfig.cssVars).forEach(([key, value]) => {
     root.style.setProperty(key, value);
   });
@@ -303,6 +314,75 @@ export const applyTheme = (themeConfig: ThemeConfig) => {
   root.style.setProperty(
     "--surface-hover",
     themeConfig.isDark ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.09)",
+  );
+  // Bridge bg-gradient so body background honours the QA theme
+  root.style.setProperty(
+    "--bg-gradient",
+    themeConfig.isDark
+      ? `linear-gradient(135deg, ${themeConfig.cssVars["--qa-bg-primary"]} 0%, ${themeConfig.cssVars["--qa-bg-secondary"]} 50%, ${themeConfig.cssVars["--qa-bg-primary"]} 100%)`
+      : `linear-gradient(135deg, ${themeConfig.cssVars["--qa-bg-primary"]} 0%, ${themeConfig.cssVars["--qa-bg-secondary"]} 50%, ${themeConfig.cssVars["--qa-bg-primary"]} 100%)`,
+  );
+  // Bridge input-bg for form inputs
+  root.style.setProperty(
+    "--input-bg",
+    themeConfig.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+  );
+
+  /* ── Status / semantic colours ─────────────────────────────── */
+  const qs = themeConfig.cssVars["--qa-success"];
+  const qw = themeConfig.cssVars["--qa-warning"];
+  const qe = themeConfig.cssVars["--qa-error"];
+  root.style.setProperty("--success", qs);
+  root.style.setProperty("--warning", qw);
+  root.style.setProperty("--danger", qe);
+  root.style.setProperty("--info", themeConfig.cssVars["--qa-accent"]);
+
+  /* ── Accent glow & scrollbar ────────────────────────────────── */
+  root.style.setProperty(
+    "--accent-glow",
+    hexToRgba(themeConfig.primaryColor, 0.25),
+  );
+  root.style.setProperty(
+    "--scrollbar-thumb",
+    hexToRgba(themeConfig.primaryColor, 0.16),
+  );
+
+  /* ── Health colours ─────────────────────────────────────────── */
+  root.style.setProperty("--health-green", qs);
+  root.style.setProperty("--health-yellow", qw);
+  root.style.setProperty("--health-red", qe);
+  root.style.setProperty("--health-green-bg", hexToRgba(qs, 0.08));
+  root.style.setProperty("--health-yellow-bg", hexToRgba(qw, 0.08));
+  root.style.setProperty("--health-red-bg", hexToRgba(qe, 0.08));
+  root.style.setProperty("--health-green-border", hexToRgba(qs, 0.28));
+  root.style.setProperty("--health-yellow-border", hexToRgba(qw, 0.28));
+  root.style.setProperty("--health-red-border", hexToRgba(qe, 0.28));
+
+  /* ── Chart colours ──────────────────────────────────────────── */
+  root.style.setProperty("--chart-done", qs);
+  root.style.setProperty("--chart-progress", qw);
+  root.style.setProperty("--chart-todo", themeConfig.cssVars["--qa-accent"]);
+  root.style.setProperty(
+    "--chart-line",
+    themeConfig.cssVars["--qa-accent-hover"],
+  );
+
+  /* ── Table hover / header ───────────────────────────────────── */
+  const tableHover = hexToRgba(
+    themeConfig.primaryColor,
+    themeConfig.isDark ? 0.04 : 0.03,
+  );
+  root.style.setProperty("--table-row-hover", tableHover);
+  root.style.setProperty("--table-header-bg", tableHover);
+
+  /* ── Priority colours ────────────────────────────────────────── */
+  root.style.setProperty("--priority-highest", qe);
+  root.style.setProperty("--priority-high", qe);
+  root.style.setProperty("--priority-medium", qw);
+  root.style.setProperty("--priority-low", themeConfig.cssVars["--qa-accent"]);
+  root.style.setProperty(
+    "--priority-lowest",
+    themeConfig.isDark ? "#6b7280" : "#9ba3bf",
   );
 };
 

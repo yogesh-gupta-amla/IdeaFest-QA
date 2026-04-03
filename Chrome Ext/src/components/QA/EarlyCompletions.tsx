@@ -30,6 +30,7 @@ import {
 import { useEarlyCompletions } from "../../hooks/useQAData";
 import { useDashboardStore } from "../../store/useStore";
 import type { EarlyCompletionItem } from "../../types/qa";
+import NeonCard from "../common/NeonCard";
 
 const CHART_COLORS = [
   "#52c41a",
@@ -309,23 +310,33 @@ const EarlyCompletions: React.FC = () => {
           gap: 12,
         }}
       >
-        <Card size="small" style={{ borderLeft: "3px solid #1890ff" }}>
+        <NeonCard
+          accent="#52c41a"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Total Issues Analyzed"
             value={data.totalIssuesAnalyzed}
             prefix={<FundOutlined style={{ color: "#1890ff" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #52c41a" }}>
+        </NeonCard>
+        <NeonCard style={{ borderLeft: "3px solid #52c41a" }}>
           <Statistic
             title="Early Completed"
             value={data.totalEarlyItems}
             prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #faad14" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#faad14"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Early Completion %"
             value={data.earlyCompletionPercentage}
@@ -333,8 +344,8 @@ const EarlyCompletions: React.FC = () => {
             prefix={<PercentageOutlined style={{ color: "#faad14" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #722ed1" }}>
+        </NeonCard>
+        <NeonCard style={{ borderLeft: "3px solid #722ed1" }}>
           <Statistic
             title="Avg % Time Saved"
             value={data.avgPercentSaved}
@@ -342,21 +353,25 @@ const EarlyCompletions: React.FC = () => {
             prefix={<RiseOutlined style={{ color: "#722ed1" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #13c2c2" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#13c2c2"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Total Time Saved"
             value={formatHours(totalTimeSaved)}
             prefix={<ClockCircleOutlined style={{ color: "#13c2c2" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
-        </Card>
+        </NeonCard>
       </div>
 
       {/* ── 🥇 Top Performer Banner ── */}
       {topContributor && (
-        <Card
-          size="small"
+        <NeonCard
           style={{
             borderLeft: "4px solid #faad14",
             background:
@@ -384,7 +399,7 @@ const EarlyCompletions: React.FC = () => {
               </div>
             </div>
           </div>
-        </Card>
+        </NeonCard>
       )}
 
       {/* ── Tab Switcher ── */}

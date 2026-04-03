@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Row, Col, Card, Tag, Statistic, Spin, Alert, List, Table } from "antd";
+import { Row, Col, Tag, Statistic, Spin, Alert, List, Table } from "antd";
 import {
   LineChart,
   Line,
@@ -20,6 +20,7 @@ import { useDashboardStore } from "../../store/useStore";
 import type { QueryTimeRange, DateRange } from "../../utils/queryTimeRange";
 import GaugeChart from "../Charts/GaugeChart";
 import ChartCard from "../Charts/ChartCard";
+import NeonCard from "../common/NeonCard";
 import { exportDashboardToPDF } from "../../utils/exportUtils";
 import {
   FilePdfOutlined,
@@ -678,14 +679,11 @@ const ProjectHealth: React.FC = () => {
           },
         ].map((stat) => (
           <Col key={stat.label} xs={12} sm={8} md={4}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: "1px solid var(--qa-border)",
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-              bodyStyle={{ padding: "16px 12px" }}
+            <NeonCard
+              accent={stat.color}
+              rainbow={false}
+              speed="slow"
+              bodyStyle={{ padding: "16px 12px", textAlign: "center" }}
             >
               <Statistic
                 title={
@@ -700,7 +698,7 @@ const ProjectHealth: React.FC = () => {
                   color: stat.color,
                 }}
               />
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -807,14 +805,7 @@ const ProjectHealth: React.FC = () => {
       </Row>
 
       {/* ── AI Health Analysis ────────────────────────────────────────── */}
-      <Card
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-          marginBottom: 20,
-        }}
-        styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+      <NeonCard
         title={
           <div
             style={{
@@ -831,6 +822,9 @@ const ProjectHealth: React.FC = () => {
             <Tag color="blue">{getTimeRangeLabel(queryTimeRange)}</Tag>
           </div>
         }
+        style={{ marginBottom: 20 }}
+        bodyStyle={{ padding: 16 }}
+        speed="slow"
       >
         {/* Issue Category Counts */}
         <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
@@ -1514,20 +1508,10 @@ const ProjectHealth: React.FC = () => {
             </div>
           </Col>
         </Row>
-      </Card>
+      </NeonCard>
 
       {/* Key Drivers */}
-      <Card
-        title={
-          <span style={{ color: "var(--qa-text-primary)" }}>Key Drivers</span>
-        }
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-        }}
-        styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
-      >
+      <NeonCard title="Key Drivers" speed="slow" bodyStyle={{ padding: 16 }}>
         <List
           dataSource={health.keyDrivers}
           renderItem={(item) => (
@@ -1547,7 +1531,7 @@ const ProjectHealth: React.FC = () => {
             </List.Item>
           )}
         />
-      </Card>
+      </NeonCard>
     </div>
   );
 };

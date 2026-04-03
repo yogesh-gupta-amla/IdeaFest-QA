@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Card,
   Table,
   Tag,
   Spin,
@@ -12,6 +11,7 @@ import {
   Collapse,
   Tooltip,
 } from "antd";
+import NeonCard from "../common/NeonCard";
 import {
   FileExcelOutlined,
   WarningOutlined,
@@ -69,15 +69,7 @@ const OverburntItems: React.FC = () => {
 
   if (!hasAnalysis) {
     return (
-      <Card
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-          textAlign: "center",
-          padding: 40,
-        }}
-      >
+      <NeonCard bodyStyle={{ padding: "40px", textAlign: "center" }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
         <div
           style={{
@@ -93,7 +85,7 @@ const OverburntItems: React.FC = () => {
           No issues with workratio {">"} 100% found in the selected time range.
           Team is tracking well on estimates.
         </div>
-      </Card>
+      </NeonCard>
     );
   }
 
@@ -272,14 +264,8 @@ const OverburntItems: React.FC = () => {
   return (
     <div>
       {/* AI Recommendation Banner */}
-      <Card
-        style={{
-          background:
-            "linear-gradient(135deg, var(--qa-bg-card) 0%, rgba(99,102,241,0.08) 100%)",
-          border: "1px solid var(--qa-accent)",
-          borderRadius: 12,
-          marginBottom: 16,
-        }}
+      <NeonCard
+        style={{ marginBottom: 16 }}
         bodyStyle={{ padding: "16px 20px" }}
       >
         <Row align="middle" gutter={16}>
@@ -327,7 +313,7 @@ const OverburntItems: React.FC = () => {
             </div>
           </Col>
         </Row>
-      </Card>
+      </NeonCard>
 
       {/* Executive Summary */}
       <Alert
@@ -372,14 +358,11 @@ const OverburntItems: React.FC = () => {
           },
         ].map((s) => (
           <Col key={s.label} xs={12} md={4} lg={4}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: `1px solid ${s.color}40`,
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-              bodyStyle={{ padding: "14px 10px" }}
+            <NeonCard
+              accent={s.color}
+              rainbow={false}
+              speed="slow"
+              bodyStyle={{ padding: "14px 10px", textAlign: "center" }}
             >
               <Statistic
                 title={
@@ -390,7 +373,7 @@ const OverburntItems: React.FC = () => {
                 value={s.value}
                 valueStyle={{ fontSize: 24, fontWeight: 700, color: s.color }}
               />
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -422,12 +405,8 @@ const OverburntItems: React.FC = () => {
 
       {/* Details Tab */}
       {activeTab === "details" && (
-        <Card
-          title={
-            <span style={{ color: "var(--qa-text-primary)" }}>
-              Overburnt Issues (workratio {">"} 100%)
-            </span>
-          }
+        <NeonCard
+          title="Overburnt Issues (workratio > 100%)"
           extra={
             <Button
               icon={<FileExcelOutlined />}
@@ -442,114 +421,108 @@ const OverburntItems: React.FC = () => {
               Export
             </Button>
           }
-          style={{
-            background: "var(--qa-bg-card)",
-            border: "1px solid var(--qa-border)",
-            borderRadius: 12,
-          }}
-          styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          speed="slow"
         >
-          <Table
-            columns={detailColumns}
-            dataSource={a.items}
-            rowKey={(r) => r.issue.id}
-            size="small"
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 1400 }}
-            expandable={{
-              expandedRowRender: (record) => (
-                <div style={{ padding: "8px 0" }}>
-                  <Row gutter={16}>
-                    <Col span={8}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: "var(--qa-text-primary)",
-                          marginBottom: 4,
-                        }}
-                      >
-                        All Contributors
-                      </div>
-                      {record.allContributors.map((c) => (
+          <div style={{ padding: "0 4px 4px" }}>
+            <Table
+              columns={detailColumns}
+              dataSource={a.items}
+              rowKey={(r) => r.issue.id}
+              size="small"
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 1400 }}
+              expandable={{
+                expandedRowRender: (record) => (
+                  <div style={{ padding: "8px 0" }}>
+                    <Row gutter={16}>
+                      <Col span={8}>
                         <div
-                          key={c.name}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "var(--qa-text-primary)",
+                            marginBottom: 4,
+                          }}
+                        >
+                          All Contributors
+                        </div>
+                        {record.allContributors.map((c) => (
+                          <div
+                            key={c.name}
+                            style={{
+                              fontSize: 11,
+                              color: "var(--qa-text-muted)",
+                              marginBottom: 2,
+                            }}
+                          >
+                            {c.name}: {c.timeLogged}h
+                            {c.name === record.issue.assignee && (
+                              <Tag
+                                color="blue"
+                                style={{ fontSize: 10, marginLeft: 4 }}
+                              >
+                                Assignee
+                              </Tag>
+                            )}
+                          </div>
+                        ))}
+                      </Col>
+                      <Col span={8}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "var(--qa-text-primary)",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Actionable Fix
+                        </div>
+                        <div
                           style={{
                             fontSize: 11,
                             color: "var(--qa-text-muted)",
-                            marginBottom: 2,
                           }}
                         >
-                          {c.name}: {c.timeLogged}h
-                          {c.name === record.issue.assignee && (
-                            <Tag
-                              color="blue"
-                              style={{ fontSize: 10, marginLeft: 4 }}
-                            >
-                              Assignee
-                            </Tag>
-                          )}
+                          {record.actionableFix}
                         </div>
-                      ))}
-                    </Col>
-                    <Col span={8}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: "var(--qa-text-primary)",
-                          marginBottom: 4,
-                        }}
-                      >
-                        Actionable Fix
-                      </div>
-                      <div
-                        style={{ fontSize: 11, color: "var(--qa-text-muted)" }}
-                      >
-                        {record.actionableFix}
-                      </div>
-                    </Col>
-                    <Col span={8}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: "var(--qa-text-primary)",
-                          marginBottom: 4,
-                        }}
-                      >
-                        Expected Improvement
-                      </div>
-                      <div
-                        style={{ fontSize: 11, color: "var(--qa-text-muted)" }}
-                      >
-                        {record.expectedImprovement}
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              ),
-            }}
-          />
-        </Card>
+                      </Col>
+                      <Col span={8}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "var(--qa-text-primary)",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Expected Improvement
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--qa-text-muted)",
+                          }}
+                        >
+                          {record.expectedImprovement}
+                        </div>
+                      </Col>
+                    </Row>
+                  </div>
+                ),
+              }}
+            />
+          </div>
+        </NeonCard>
       )}
 
       {/* Contributors Tab */}
       {activeTab === "contributors" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Card
-            title={
-              <span style={{ color: "var(--qa-text-primary)" }}>
-                <TeamOutlined style={{ marginRight: 8 }} />
-                Top Overburn Contributors
-              </span>
-            }
-            style={{
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              borderRadius: 12,
-            }}
-            styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          <NeonCard
+            title="👥 Top Overburn Contributors"
+            speed="slow"
+            bodyStyle={{ padding: 16 }}
           >
             {a.crossIssueAnalysis.topOverburnContributors.length === 0 ? (
               <div
@@ -615,21 +588,12 @@ const OverburntItems: React.FC = () => {
                 ]}
               />
             )}
-          </Card>
+          </NeonCard>
 
-          <Card
-            title={
-              <span style={{ color: "var(--qa-text-primary)" }}>
-                <UserSwitchOutlined style={{ marginRight: 8 }} />
-                Assignee vs. Actual Contributor Mismatch
-              </span>
-            }
-            style={{
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              borderRadius: 12,
-            }}
-            styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          <NeonCard
+            title="🔄 Assignee vs. Actual Contributor Mismatch"
+            speed="slow"
+            bodyStyle={{ padding: 16 }}
           >
             {a.crossIssueAnalysis.assigneeVsActualMismatch.length === 0 ? (
               <div
@@ -686,7 +650,7 @@ const OverburntItems: React.FC = () => {
                 ]}
               />
             )}
-          </Card>
+          </NeonCard>
         </div>
       )}
 
@@ -841,18 +805,10 @@ const OverburntItems: React.FC = () => {
       {/* Resources Tab */}
       {activeTab === "resources" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Card
-            title={
-              <span style={{ color: "var(--qa-text-primary)" }}>
-                🔴 Overutilized Resources
-              </span>
-            }
-            style={{
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              borderRadius: 12,
-            }}
-            styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          <NeonCard
+            title="🔴 Overutilized Resources"
+            speed="slow"
+            bodyStyle={{ padding: 16 }}
           >
             {a.resourceOptimization.overutilized.length === 0 ? (
               <div
@@ -913,20 +869,12 @@ const OverburntItems: React.FC = () => {
                 ]}
               />
             )}
-          </Card>
+          </NeonCard>
 
-          <Card
-            title={
-              <span style={{ color: "var(--qa-text-primary)" }}>
-                🟢 Underutilized Resources
-              </span>
-            }
-            style={{
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              borderRadius: 12,
-            }}
-            styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          <NeonCard
+            title="🟢 Underutilized Resources"
+            speed="slow"
+            bodyStyle={{ padding: 16 }}
           >
             {a.resourceOptimization.underutilized.length === 0 ? (
               <div
@@ -973,7 +921,7 @@ const OverburntItems: React.FC = () => {
                 ]}
               />
             )}
-          </Card>
+          </NeonCard>
         </div>
       )}
     </div>

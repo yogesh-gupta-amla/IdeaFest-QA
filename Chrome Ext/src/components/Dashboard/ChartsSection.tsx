@@ -57,12 +57,13 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   return (
     <div
       style={{
-        background: "rgba(0,0,0,0.88)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: "var(--qa-bg-card)",
+        border: "1px solid var(--qa-border)",
         borderRadius: 10,
         padding: "8px 14px",
-        color: "#fff",
+        color: "var(--qa-text-primary)",
         fontSize: 13,
+        boxShadow: "var(--qa-shadow)",
       }}
     >
       <span style={{ color: item.payload.fill, fontWeight: 700 }}>● </span>

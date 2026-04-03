@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Layout } from "antd";
 import InsightsLogo from "../common/InsightsLogo";
 import {
@@ -29,6 +29,7 @@ import {
   Timer,
   Wifi,
   WifiOff,
+  Menu,
 } from "lucide-react";
 
 const { Content } = Layout;
@@ -45,7 +46,7 @@ interface QALayoutProps {
   onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
-/* ── Section groups matching the reference screenshot ── */
+/* -- Section groups matching the reference screenshot -- */
 const NAV_GROUPS = [
   {
     label: "Analysis",
@@ -100,31 +101,31 @@ const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 const RB =
   "conic-gradient(from 0deg, #ff006e, #8338ec, #3a86ff, #06d6a0, #ffbe0b, #f97316, #ff006e)";
 
-/* ── Floating bubble data (pre-seeded, no Math.random) ── */
+/* -- Floating bubble data (pre-seeded, no Math.random) -- */
 const BUBBLES = [
-  { left: 5, size: 13, dur: 18, delay: 0, opacity: 0.13 },
-  { left: 12, size: 28, dur: 24, delay: -6, opacity: 0.07 },
-  { left: 20, size: 9, dur: 13, delay: -13, opacity: 0.15 },
-  { left: 28, size: 42, dur: 30, delay: -4, opacity: 0.05 },
-  { left: 36, size: 17, dur: 20, delay: -10, opacity: 0.1 },
-  { left: 44, size: 11, dur: 15, delay: -18, opacity: 0.12 },
-  { left: 52, size: 33, dur: 26, delay: -7, opacity: 0.06 },
-  { left: 60, size: 15, dur: 17, delay: -14, opacity: 0.11 },
-  { left: 68, size: 23, dur: 22, delay: -2, opacity: 0.09 },
-  { left: 76, size: 8, dur: 12, delay: -11, opacity: 0.14 },
-  { left: 84, size: 37, dur: 32, delay: -17, opacity: 0.04 },
-  { left: 92, size: 19, dur: 19, delay: -8, opacity: 0.08 },
-  { left: 10, size: 7, dur: 11, delay: -20, opacity: 0.16 },
-  { left: 33, size: 48, dur: 38, delay: -3, opacity: 0.04 },
-  { left: 48, size: 14, dur: 16, delay: -15, opacity: 0.11 },
-  { left: 64, size: 10, dur: 14, delay: -9, opacity: 0.13 },
-  { left: 80, size: 29, dur: 25, delay: -12, opacity: 0.06 },
-  { left: 88, size: 12, dur: 15, delay: -5, opacity: 0.12 },
-  { left: 22, size: 21, dur: 21, delay: -16, opacity: 0.08 },
-  { left: 72, size: 6, dur: 10, delay: -21, opacity: 0.17 },
+  { left: 5, size: 20, dur: 18, delay: 0, opacity: 0.55 },
+  { left: 12, size: 42, dur: 24, delay: -6, opacity: 0.38 },
+  { left: 20, size: 14, dur: 13, delay: -13, opacity: 0.62 },
+  { left: 28, size: 62, dur: 30, delay: -4, opacity: 0.32 },
+  { left: 36, size: 26, dur: 20, delay: -10, opacity: 0.48 },
+  { left: 44, size: 17, dur: 15, delay: -18, opacity: 0.55 },
+  { left: 52, size: 50, dur: 26, delay: -7, opacity: 0.36 },
+  { left: 60, size: 23, dur: 17, delay: -14, opacity: 0.52 },
+  { left: 68, size: 35, dur: 22, delay: -2, opacity: 0.42 },
+  { left: 76, size: 12, dur: 12, delay: -11, opacity: 0.6 },
+  { left: 84, size: 55, dur: 32, delay: -17, opacity: 0.3 },
+  { left: 92, size: 29, dur: 19, delay: -8, opacity: 0.45 },
+  { left: 10, size: 10, dur: 11, delay: -20, opacity: 0.65 },
+  { left: 33, size: 70, dur: 38, delay: -3, opacity: 0.28 },
+  { left: 48, size: 21, dur: 16, delay: -15, opacity: 0.5 },
+  { left: 64, size: 15, dur: 14, delay: -9, opacity: 0.58 },
+  { left: 80, size: 44, dur: 25, delay: -12, opacity: 0.38 },
+  { left: 88, size: 18, dur: 15, delay: -5, opacity: 0.55 },
+  { left: 22, size: 32, dur: 21, delay: -16, opacity: 0.42 },
+  { left: 72, size: 9, dur: 10, delay: -21, opacity: 0.68 },
 ] as const;
 
-/* BubbleBg — theme-aware floating bubbles */
+/* BubbleBg � theme-aware floating bubbles */
 const BubbleBg: React.FC<{ kf?: "bubble-rise" | "bubble-rise-sm" }> = ({
   kf = "bubble-rise",
 }) => (
@@ -139,19 +140,212 @@ const BubbleBg: React.FC<{ kf?: "bubble-rise" | "bubble-rise-sm" }> = ({
           position: "absolute",
           left: `${b.left}%`,
           bottom: "-60px",
-          width: b.size,
-          height: b.size,
+          width: b.size + 3,
+          height: b.size + 3,
           borderRadius: "50%",
-          background: `radial-gradient(circle at 33% 28%, rgba(255,255,255,0.45), var(--qa-accent) 55%, transparent 80%)`,
-          border: `1px solid var(--qa-accent)`,
+          background:
+            "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
+          padding: "1.5px",
+          boxSizing: "border-box",
           opacity: b.opacity,
           animation: `${i % 3 === 0 ? "bubble-rise-sm" : kf} ${b.dur}s ease-in-out ${b.delay}s infinite`,
           willChange: "transform, opacity",
         }}
-      />
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            borderRadius: "50%",
+            background:
+              "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
+              "rgb(10, 14, 52)",
+          }}
+        />
+      </div>
     ))}
   </div>
 );
+
+/* -- Parallax bubble layers � main content area -- */
+const PARALLAX_LAYERS = [
+  // Layer 0 � deep background: slow, large
+  [
+    { left: 5, size: 60, dur: 72, delay: 0, opacity: 0.28 },
+    { left: 25, size: 80, dur: 90, delay: -22, opacity: 0.22 },
+    { left: 50, size: 70, dur: 80, delay: -45, opacity: 0.25 },
+    { left: 72, size: 65, dur: 66, delay: -12, opacity: 0.28 },
+    { left: 90, size: 55, dur: 78, delay: -35, opacity: 0.24 },
+  ],
+  // Layer 1 � midground
+  [
+    { left: 12, size: 45, dur: 50, delay: -8, opacity: 0.32 },
+    { left: 35, size: 55, dur: 58, delay: -20, opacity: 0.3 },
+    { left: 58, size: 40, dur: 44, delay: -33, opacity: 0.34 },
+    { left: 78, size: 50, dur: 62, delay: -15, opacity: 0.28 },
+    { left: 94, size: 38, dur: 52, delay: -40, opacity: 0.3 },
+  ],
+  // Layer 2 � near foreground: faster
+  [
+    { left: 8, size: 30, dur: 32, delay: -10, opacity: 0.38 },
+    { left: 30, size: 36, dur: 36, delay: -4, opacity: 0.35 },
+    { left: 52, size: 26, dur: 28, delay: -22, opacity: 0.4 },
+    { left: 70, size: 32, dur: 34, delay: -16, opacity: 0.34 },
+    { left: 88, size: 28, dur: 30, delay: -28, opacity: 0.36 },
+  ],
+] as const;
+
+const ParallaxBubbleBg: React.FC = () => {
+  const layer0Ref = useRef<HTMLDivElement>(null);
+  const layer1Ref = useRef<HTMLDivElement>(null);
+  const layer2Ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const refs = [layer0Ref, layer1Ref, layer2Ref];
+    const speeds = [0.6, 0.35, 0.15];
+    const handleScroll = () => {
+      const y = window.scrollY;
+      refs.forEach((ref, i) => {
+        if (ref.current) {
+          ref.current.style.transform = `translateY(${y * speeds[i]}px)`;
+        }
+      });
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden pointer-events-none"
+      style={{ zIndex: 0 }}
+    >
+      {/* depth radial glow */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 50% 90%, color-mix(in srgb, var(--qa-accent) 10%, transparent) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Layer 0 � deep background */}
+      <div
+        ref={layer0Ref}
+        className="absolute inset-0"
+        style={{ willChange: "transform" }}
+      >
+        {PARALLAX_LAYERS[0].map((b, i) => (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: `calc(${b.left}% - ${b.size / 2}px)`,
+              bottom: "-180px",
+              width: b.size + 3,
+              height: b.size + 3,
+              borderRadius: "50%",
+              background:
+                "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
+              padding: "1.5px",
+              boxSizing: "border-box",
+              opacity: b.opacity,
+              animation: `bubble-rise ${b.dur}s ease-in-out ${b.delay}s infinite`,
+              willChange: "transform, opacity",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
+                  "rgb(10, 14, 52)",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      {/* Layer 1 � midground */}
+      <div
+        ref={layer1Ref}
+        className="absolute inset-0"
+        style={{ willChange: "transform" }}
+      >
+        {PARALLAX_LAYERS[1].map((b, i) => (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: `calc(${b.left}% - ${b.size / 2}px)`,
+              bottom: "-120px",
+              width: b.size + 3,
+              height: b.size + 3,
+              borderRadius: "50%",
+              background:
+                "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
+              padding: "1.5px",
+              boxSizing: "border-box",
+              opacity: b.opacity,
+              animation: `bubble-rise ${b.dur}s ease-in-out ${b.delay}s infinite`,
+              willChange: "transform, opacity",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
+                  "rgb(10, 14, 52)",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      {/* Layer 2 � near foreground */}
+      <div
+        ref={layer2Ref}
+        className="absolute inset-0"
+        style={{ willChange: "transform" }}
+      >
+        {PARALLAX_LAYERS[2].map((b, i) => (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: `calc(${b.left}% - ${b.size / 2}px)`,
+              bottom: "-80px",
+              width: b.size + 3,
+              height: b.size + 3,
+              borderRadius: "50%",
+              background:
+                "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
+              padding: "1.5px",
+              boxSizing: "border-box",
+              opacity: b.opacity,
+              animation: `bubble-rise ${b.dur}s ease-in-out ${b.delay}s infinite`,
+              willChange: "transform, opacity",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
+                  "rgb(10, 14, 52)",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const selectStyle: React.CSSProperties = {
   background: "var(--qa-bg-secondary)",
@@ -169,35 +363,36 @@ const selectStyle: React.CSSProperties = {
   backgroundPosition: "right 10px center",
 };
 
-/* ── Individual nav item ── */
+/* -- Individual nav item -- */
 const NavItem: React.FC<{
   item: { key: string; icon: React.ReactNode; label: string };
   isActive: boolean;
+  collapsed: boolean;
   onClick: () => void;
-}> = ({ item, isActive, onClick }) => {
+}> = ({ item, isActive, collapsed, onClick }) => {
   const [hovered, setHovered] = useState(false);
   const show = isActive || hovered;
 
   return (
     <div
       className="relative cursor-pointer"
+      title={collapsed ? item.label : undefined}
       style={{
         padding: "1.5px",
         borderRadius: 12,
-        margin: "3px 10px",
+        margin: collapsed ? "3px 6px" : "3px 10px",
         transition: "box-shadow 0.3s ease, transform 0.25s ease",
-        boxShadow: isActive
-          ? "0 0 22px var(--qa-accent), 0 0 44px var(--qa-accent)"
-          : hovered
-            ? "0 0 16px var(--qa-accent)"
-            : "none",
-        transform: hovered && !isActive ? "translateX(3px)" : "none",
+        boxShadow: hovered
+          ? "0 2px 8px color-mix(in srgb, var(--qa-accent) 20%, rgba(0,0,0,0.12))"
+          : "none",
+        transform:
+          hovered && !isActive && !collapsed ? "translateX(3px)" : "none",
       }}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* spinning rainbow border — visible on hover/active */}
+      {/* spinning rainbow border � visible on hover/active */}
       <div
         className="absolute inset-0 overflow-hidden"
         style={{
@@ -254,7 +449,6 @@ const NavItem: React.FC<{
             style={{
               background:
                 "linear-gradient(180deg, var(--qa-accent), var(--qa-accent-hover))",
-              boxShadow: "0 0 10px var(--qa-accent)",
             }}
           />
         )}
@@ -268,26 +462,29 @@ const NavItem: React.FC<{
                 ? "var(--qa-accent)"
                 : "var(--qa-text-muted)",
             transition: "color 0.2s ease",
-            filter: isActive ? "drop-shadow(0 0 6px var(--qa-accent))" : "none",
+            filter: isActive ? "none" : "none",
+            margin: collapsed ? "0 auto" : undefined,
           }}
         >
           {item.icon}
         </span>
 
-        {/* label */}
-        <span
-          className="text-[13px] font-semibold leading-none"
-          style={{
-            color: isActive
-              ? "var(--qa-text-primary)"
-              : hovered
-                ? "var(--qa-accent-hover)"
-                : "var(--qa-text-secondary)",
-            transition: "color 0.2s ease",
-          }}
-        >
-          {item.label}
-        </span>
+        {/* label � hidden when collapsed */}
+        {!collapsed && (
+          <span
+            className="text-[13px] font-semibold leading-none"
+            style={{
+              color: isActive
+                ? "var(--qa-text-primary)"
+                : hovered
+                  ? "var(--qa-accent-hover)"
+                  : "var(--qa-text-secondary)",
+              transition: "color 0.2s ease",
+            }}
+          >
+            {item.label}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -306,6 +503,22 @@ const QALayout: React.FC<QALayoutProps> = ({
 }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [switchingRange, setSwitchingRange] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 640;
+      setIsMobile(mobile);
+      if (!mobile) setMobileOpen(false);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  const SIDEBAR_W = isMobile ? 0 : collapsed ? 64 : 220;
 
   const handleRefresh = useCallback(async () => {
     if (!onRefresh || refreshing) return;
@@ -343,20 +556,24 @@ const QALayout: React.FC<QALayoutProps> = ({
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      {/* ════════════════ SIDEBAR ════════════════ */}
+      {/* ---------------- SIDEBAR ---------------- */}
       <aside
-        className="fixed top-0 left-0 h-screen z-[100] flex flex-col"
+        className="fixed top-0 left-0 h-screen flex flex-col"
         style={{
-          width: 220,
+          width: isMobile ? 220 : SIDEBAR_W,
+          zIndex: isMobile ? 200 : 100,
+          left: isMobile ? (mobileOpen ? 0 : -220) : 0,
           background: "var(--qa-bg-sidebar)",
           backdropFilter: "blur(28px)",
           WebkitBackdropFilter: "blur(28px)",
           borderRight: "1px solid var(--qa-border)",
-          boxShadow: "4px 0 32px rgba(0,0,0,0.55)",
+          boxShadow: "1px 0 12px rgba(0,0,0,0.18)",
           overflow: "hidden",
+          transition:
+            "left 0.28s cubic-bezier(0.4,0,0.2,1), width 0.28s cubic-bezier(0.4,0,0.2,1)",
         }}
       >
-        {/* floating bubbles — sidebar layer */}
+        {/* floating bubbles � sidebar layer */}
         <BubbleBg kf="bubble-rise-sm" />
         {/* accent top glow orb */}
         <div
@@ -388,13 +605,19 @@ const QALayout: React.FC<QALayoutProps> = ({
           }}
         />
 
-        {/* ── Logo ── */}
+        {/* -- Logo -- */}
         <div
-          className="relative flex items-center gap-3 px-4 py-4 flex-shrink-0"
-          style={{ borderBottom: "1px solid var(--qa-border)" }}
+          className="relative flex items-center flex-shrink-0"
+          style={{
+            borderBottom: "1px solid var(--qa-border)",
+            padding: collapsed ? "14px 0" : "14px 16px",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: collapsed ? 0 : 12,
+            transition: "padding 0.28s ease, justify-content 0.28s ease",
+          }}
         >
           <div
-            className="relative"
+            className="relative flex-shrink-0"
             style={{ padding: 1.5, borderRadius: 12, background: RB }}
           >
             <div
@@ -407,65 +630,81 @@ const QALayout: React.FC<QALayoutProps> = ({
               <InsightsLogo size={30} />
             </div>
           </div>
-          <div>
-            <div
-              className="font-black text-sm leading-tight"
-              style={{
-                background:
-                  "linear-gradient(120deg, var(--qa-text-primary), var(--qa-accent), var(--qa-accent-hover))",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                backgroundSize: "200% auto",
-                animation: "text-shimmer 5s linear infinite",
-              }}
-            >
-              InSights AI
+          {!collapsed && (
+            <div style={{ overflow: "hidden" }}>
+              <div
+                className="font-black text-sm leading-tight"
+                style={{
+                  background:
+                    "linear-gradient(120deg, var(--qa-text-primary), var(--qa-accent), var(--qa-accent-hover))",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                  backgroundSize: "200% auto",
+                  animation: "text-shimmer 5s linear infinite",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                InSights AI
+              </div>
+              <div
+                className="text-[10px]"
+                style={{ color: "var(--qa-text-muted)", whiteSpace: "nowrap" }}
+              >
+                Intelligence Dashboard
+              </div>
             </div>
-            <div
-              className="text-[10px]"
-              style={{ color: "var(--qa-text-muted)" }}
-            >
-              Intelligence Dashboard
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* ── Nav Groups ── */}
+        {/* -- Nav Groups -- */}
         <nav className="relative flex-1 overflow-y-auto overflow-x-hidden py-2 scrollbar-none">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mb-2">
-              {/* group label */}
-              <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+              {/* group label � hidden when collapsed, show thin divider instead */}
+              {collapsed ? (
                 <div
-                  className="h-px flex-1"
+                  className="mx-3 my-2"
                   style={{
+                    height: 1,
                     background:
-                      "linear-gradient(90deg, var(--qa-accent), transparent)",
-                    opacity: 0.4,
+                      "linear-gradient(90deg, transparent, var(--qa-accent), transparent)",
+                    opacity: 0.35,
                   }}
                 />
-                <span
-                  className="text-[10px] font-black uppercase tracking-[0.18em] flex-shrink-0"
-                  style={{ color: "var(--qa-accent)" }}
-                >
-                  {group.label}
-                </span>
-                <div
-                  className="h-px flex-1"
-                  style={{
-                    background:
-                      "linear-gradient(270deg, var(--qa-accent), transparent)",
-                    opacity: 0.4,
-                  }}
-                />
-              </div>
+              ) : (
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                  <div
+                    className="h-px flex-1"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, var(--qa-accent), transparent)",
+                      opacity: 0.4,
+                    }}
+                  />
+                  <span
+                    className="text-[10px] font-black uppercase tracking-[0.18em] flex-shrink-0"
+                    style={{ color: "var(--qa-accent)" }}
+                  >
+                    {group.label}
+                  </span>
+                  <div
+                    className="h-px flex-1"
+                    style={{
+                      background:
+                        "linear-gradient(270deg, var(--qa-accent), transparent)",
+                      opacity: 0.4,
+                    }}
+                  />
+                </div>
+              )}
 
               {/* items */}
               {group.items.map((item) => (
                 <NavItem
                   key={item.key}
                   item={item}
+                  collapsed={collapsed}
                   isActive={activeSection === item.key}
                   onClick={() => setActiveSection(item.key)}
                 />
@@ -474,10 +713,11 @@ const QALayout: React.FC<QALayoutProps> = ({
           ))}
         </nav>
 
-        {/* ── User card at bottom ── */}
+        {/* -- User card at bottom -- */}
         <div
           className="relative flex-shrink-0 mx-3 mb-3 overflow-hidden"
           style={{ padding: "1.5px", borderRadius: 14 }}
+          title={collapsed && user ? user.displayName : undefined}
         >
           {/* subtle spinning border on the user card */}
           <div
@@ -490,79 +730,91 @@ const QALayout: React.FC<QALayoutProps> = ({
             />
           </div>
           <div
-            className="relative rounded-[12px] px-3 py-2.5"
+            className="relative rounded-[12px] py-2.5"
             style={{
               background: "var(--qa-bg-card)",
+              padding: collapsed ? "8px 6px" : "10px 12px",
+              transition: "padding 0.28s ease",
             }}
           >
             {user ? (
-              <div className="flex items-center gap-2.5">
+              <div
+                className="flex items-center"
+                style={{
+                  gap: collapsed ? 0 : 10,
+                  justifyContent: collapsed ? "center" : "flex-start",
+                }}
+              >
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black text-white flex-shrink-0"
                   style={{
                     background:
                       "linear-gradient(135deg, var(--qa-accent), var(--qa-accent-hover))",
-                    boxShadow: `0 0 14px var(--qa-accent)`,
                     opacity: 0.9,
                   }}
                 >
                   {user.displayName?.charAt(0)?.toUpperCase() ?? "U"}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div
-                    className="text-[12px] font-bold truncate"
-                    style={{ color: "var(--qa-text-primary)" }}
-                  >
-                    {user.displayName}
-                  </div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    {authMode === "session" ? (
-                      <Wifi size={9} style={{ color: "var(--qa-success)" }} />
-                    ) : (
-                      <WifiOff
-                        size={9}
-                        style={{ color: "var(--qa-text-muted)" }}
-                      />
-                    )}
-                    <span
-                      className="text-[10px]"
-                      style={{
-                        color:
-                          authMode === "session"
-                            ? "var(--qa-success)"
-                            : "var(--qa-text-muted)",
-                      }}
+                {!collapsed && (
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-[12px] font-bold truncate"
+                      style={{ color: "var(--qa-text-primary)" }}
                     >
-                      {authMode === "session"
-                        ? "Session Auth"
-                        : authMode === "token"
-                          ? "Token Auth"
-                          : "Connected"}
-                    </span>
+                      {user.displayName}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {authMode === "session" ? (
+                        <Wifi size={9} style={{ color: "var(--qa-success)" }} />
+                      ) : (
+                        <WifiOff
+                          size={9}
+                          style={{ color: "var(--qa-text-muted)" }}
+                        />
+                      )}
+                      <span
+                        className="text-[10px]"
+                        style={{
+                          color:
+                            authMode === "session"
+                              ? "var(--qa-success)"
+                              : "var(--qa-text-muted)",
+                        }}
+                      >
+                        {authMode === "session"
+                          ? "Session Auth"
+                          : authMode === "token"
+                            ? "Token Auth"
+                            : "Connected"}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
-              <button
-                onClick={() => setActiveSection("config")}
-                className="w-full text-left text-[11px] font-medium"
-                style={{
-                  color: "var(--text-muted)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                Not connected · Configure →
-              </button>
+              !collapsed && (
+                <button
+                  onClick={() => setActiveSection("config")}
+                  className="w-full text-left text-[11px] font-medium"
+                  style={{
+                    color: "var(--text-muted)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Not connected � Configure ?
+                </button>
+              )
             )}
           </div>
         </div>
 
-        {/* ── Back link ── */}
+        {/* -- Back link -- */}
         {onBack && (
           <button
             onClick={onBack}
+            title={collapsed ? "Back to Home" : undefined}
             className="relative flex-shrink-0 flex items-center gap-2 mx-3 mb-3 px-3 py-2 text-xs font-medium rounded-xl transition-all duration-200"
             style={{
               background:
@@ -570,6 +822,7 @@ const QALayout: React.FC<QALayoutProps> = ({
               border: "1px solid var(--qa-border)",
               color: "var(--qa-text-muted)",
               cursor: "pointer",
+              justifyContent: collapsed ? "center" : "flex-start",
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.color =
@@ -584,13 +837,28 @@ const QALayout: React.FC<QALayoutProps> = ({
                 "var(--qa-border)";
             }}
           >
-            <ChevronLeft size={13} /> Back to Home
+            <ChevronLeft size={13} />
+            {!collapsed && " Back to Home"}
           </button>
         )}
       </aside>
 
-      {/* ════════════════ MAIN AREA ════════════════ */}
-      <div className="flex-1 flex flex-col" style={{ marginLeft: 220 }}>
+      {/* -------- Mobile backdrop -------- */}
+      {isMobile && mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[150]"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* ---------------- MAIN AREA ---------------- */}
+      <div
+        className="flex-1 flex flex-col"
+        style={{
+          marginLeft: isMobile ? 0 : SIDEBAR_W,
+          transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
         {/* Top bar */}
         <div
           className="sticky top-0 z-[90] flex items-center justify-between px-5"
@@ -600,9 +868,41 @@ const QALayout: React.FC<QALayoutProps> = ({
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
             borderBottom: "1px solid var(--qa-border)",
-            boxShadow: "0 2px 24px rgba(0,0,0,0.4)",
+            boxShadow: "0 1px 8px rgba(0,0,0,0.12)",
+            paddingTop: "1rem",
+            paddingBottom: "1rem",
           }}
         >
+          {/* Burger menu toggle */}
+          <button
+            onClick={() =>
+              isMobile ? setMobileOpen((c) => !c) : setCollapsed((c) => !c)
+            }
+            className="flex items-center justify-center w-8 h-8 rounded-lg mr-2 flex-shrink-0 transition-all duration-200"
+            style={{
+              background:
+                "color-mix(in srgb, var(--qa-accent) 10%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--qa-accent) 25%, transparent)",
+              color: "var(--qa-text-muted)",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "color-mix(in srgb, var(--qa-accent) 20%, transparent)";
+              (e.currentTarget as HTMLButtonElement).style.color =
+                "var(--qa-accent)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "color-mix(in srgb, var(--qa-accent) 10%, transparent)";
+              (e.currentTarget as HTMLButtonElement).style.color =
+                "var(--qa-text-muted)";
+            }}
+          >
+            <Menu size={15} />
+          </button>
+
           {/* Section title */}
           <div className="flex items-center gap-3">
             <span
@@ -635,7 +935,7 @@ const QALayout: React.FC<QALayoutProps> = ({
           </div>
 
           {/* Right controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {/* Time range */}
             {onTimeRangeChange && (
               <div className="relative flex items-center gap-1.5">
@@ -760,7 +1060,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   size={12}
                   className={refreshing ? "animate-spin" : ""}
                 />
-                {refreshing ? "Syncing…" : "Sync"}
+                {refreshing ? "Syncing�" : "Sync"}
               </button>
             )}
 
@@ -775,7 +1075,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   border: "1px solid var(--qa-accent-hover)",
                 }}
               >
-                {authMode === "session" ? "🔐 Session" : "🔑 Token"}
+                {authMode === "session" ? "?? Session" : "?? Token"}
               </span>
             )}
           </div>
@@ -787,8 +1087,8 @@ const QALayout: React.FC<QALayoutProps> = ({
           className="relative flex-1 p-5 overflow-hidden"
           style={{ minHeight: "calc(100vh - 54px)" }}
         >
-          {/* floating bubbles — main content layer */}
-          <BubbleBg />
+          {/* floating bubbles � main content layer with parallax */}
+          <ParallaxBubbleBg />
           <div className="relative" style={{ zIndex: 1 }}>
             {children}
           </div>

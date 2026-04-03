@@ -37,6 +37,7 @@ import {
 } from "@ant-design/icons";
 import type { AgeingItem, AgeingStatus } from "../../types/qa";
 import type { ColumnsType } from "antd/es/table";
+import NeonCard from "../common/NeonCard";
 
 const AGEING_COLORS: Record<AgeingStatus, string> = {
   FRESH: "#52c41a",
@@ -357,14 +358,11 @@ const AgeingAnalysis: React.FC = () => {
           { label: "AGED", value: aged, color: "#ff4d4f", icon: "🔴" },
         ].map((s) => (
           <Col key={s.label} xs={12} sm={8} md={4}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: "1px solid var(--qa-border)",
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-              styles={{ body: { padding: "16px 12px" } }}
+            <NeonCard
+              accent={s.color}
+              rainbow={false}
+              speed="slow"
+              bodyStyle={{ padding: "16px 12px", textAlign: "center" }}
             >
               <Statistic
                 title={
@@ -375,7 +373,7 @@ const AgeingAnalysis: React.FC = () => {
                 value={s.value}
                 valueStyle={{ fontSize: 24, fontWeight: 700, color: s.color }}
               />
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -424,19 +422,11 @@ const AgeingAnalysis: React.FC = () => {
 
         {/* Risk Insights from analysis */}
         <Col xs={24} md={12}>
-          <Card
-            title={
-              <span style={{ color: "var(--qa-text-primary)" }}>
-                🚨 Risk Insights
-              </span>
-            }
-            style={{
-              background: "var(--qa-bg-card)",
-              border: "1px solid var(--qa-border)",
-              borderRadius: 12,
-              height: "100%",
-            }}
-            styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          <NeonCard
+            title="🚨 Risk Insights"
+            speed="slow"
+            style={{ height: "100%" }}
+            bodyStyle={{ padding: 16 }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {riskInsights.map((insight, idx) => (
@@ -474,7 +464,7 @@ const AgeingAnalysis: React.FC = () => {
                 </ul>
               </div>
             </div>
-          </Card>
+          </NeonCard>
         </Col>
       </Row>
 
@@ -513,7 +503,7 @@ const AgeingAnalysis: React.FC = () => {
       </div>
 
       {/* Table */}
-      <Card
+      <NeonCard
         title={
           <span style={{ color: "var(--qa-text-primary)" }}>
             {activeTab === "fresh"
@@ -535,12 +525,7 @@ const AgeingAnalysis: React.FC = () => {
             Export Excel
           </Button>
         }
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-        }}
-        styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+        speed="slow"
       >
         <Table
           columns={columns}
@@ -562,7 +547,7 @@ const AgeingAnalysis: React.FC = () => {
             ),
           }}
         />
-      </Card>
+      </NeonCard>
     </div>
   );
 };

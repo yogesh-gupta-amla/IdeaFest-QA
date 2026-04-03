@@ -1,9 +1,10 @@
 import React from "react";
-import { Card, Table, Tag, Spin, Alert, Row, Col, Statistic } from "antd";
+import { Table, Tag, Spin, Alert, Row, Col, Statistic } from "antd";
 import { FileExcelOutlined } from "@ant-design/icons";
 import { Button } from "antd";
 import { useFlowImpact } from "../../hooks/useQAData";
 import { exportIssuesToExcel } from "../../utils/exportUtils";
+import NeonCard from "../common/NeonCard";
 import type { FlowImpactItem, RiskLevel } from "../../types/qa";
 import type { ColumnsType } from "antd/es/table";
 
@@ -171,14 +172,11 @@ const FlowImpact: React.FC = () => {
           ] as const
         ).map((s) => (
           <Col key={s.label} xs={12} md={6}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: `1px solid ${String(s.color)}40`,
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-              bodyStyle={{ padding: "16px 12px" }}
+            <NeonCard
+              accent={String(s.color)}
+              rainbow={false}
+              speed="slow"
+              bodyStyle={{ padding: "16px 12px", textAlign: "center" }}
             >
               <Statistic
                 title={
@@ -193,7 +191,7 @@ const FlowImpact: React.FC = () => {
                   color: s.color as string,
                 }}
               />
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -207,12 +205,8 @@ const FlowImpact: React.FC = () => {
         />
       )}
 
-      <Card
-        title={
-          <span style={{ color: "var(--qa-text-primary)" }}>
-            Flow Impact Matrix
-          </span>
-        }
+      <NeonCard
+        title="Flow Impact Matrix"
         extra={
           <Button
             icon={<FileExcelOutlined />}
@@ -233,25 +227,22 @@ const FlowImpact: React.FC = () => {
             Export Excel
           </Button>
         }
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-        }}
-        styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+        speed="slow"
       >
-        <Table
-          columns={columns}
-          dataSource={items}
-          rowKey={(r) => r.issue.id}
-          size="small"
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 900 }}
-          rowClassName={(record) =>
-            record.overallRisk === "HIGH" ? "qa-high-risk-row" : ""
-          }
-        />
-      </Card>
+        <div style={{ padding: "0 4px 4px" }}>
+          <Table
+            columns={columns}
+            dataSource={items}
+            rowKey={(r) => r.issue.id}
+            size="small"
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 900 }}
+            rowClassName={(record) =>
+              record.overallRisk === "HIGH" ? "qa-high-risk-row" : ""
+            }
+          />
+        </div>
+      </NeonCard>
     </div>
   );
 };

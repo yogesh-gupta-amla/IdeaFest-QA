@@ -535,11 +535,7 @@ export default function App() {
   }, []);
 
   if (initializing) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-[#0d1117]">
-        <div className="spinner" />
-      </div>
-    );
+    return <LoadingOverlay visible={true} text="Initializing…" />;
   }
 
   if (showQADashboard) {

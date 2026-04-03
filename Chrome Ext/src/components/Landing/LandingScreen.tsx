@@ -24,11 +24,91 @@ interface LandingScreenProps {
   onLoadProject: (key: string, name: string) => void;
 }
 
+/* ── Pre-seeded bubble data (no Math.random — safe for SSR) ── */
+const LANDING_BUBBLES = [
+  { left: 4, size: 18, dur: 18, delay: 0, opacity: 0.7 },
+  { left: 11, size: 38, dur: 24, delay: -6, opacity: 0.5 },
+  { left: 19, size: 12, dur: 13, delay: -13, opacity: 0.8 },
+  { left: 27, size: 58, dur: 30, delay: -4, opacity: 0.4 },
+  { left: 35, size: 24, dur: 20, delay: -10, opacity: 0.6 },
+  { left: 43, size: 15, dur: 15, delay: -18, opacity: 0.7 },
+  { left: 51, size: 46, dur: 26, delay: -7, opacity: 0.45 },
+  { left: 59, size: 20, dur: 17, delay: -14, opacity: 0.65 },
+  { left: 67, size: 32, dur: 22, delay: -2, opacity: 0.5 },
+  { left: 75, size: 10, dur: 12, delay: -11, opacity: 0.75 },
+  { left: 83, size: 50, dur: 32, delay: -17, opacity: 0.4 },
+  { left: 91, size: 26, dur: 19, delay: -8, opacity: 0.55 },
+  { left: 9, size: 9, dur: 11, delay: -20, opacity: 0.8 },
+  { left: 32, size: 64, dur: 38, delay: -3, opacity: 0.35 },
+  { left: 47, size: 19, dur: 16, delay: -15, opacity: 0.6 },
+  { left: 63, size: 13, dur: 14, delay: -9, opacity: 0.72 },
+  { left: 79, size: 40, dur: 25, delay: -12, opacity: 0.45 },
+  { left: 87, size: 16, dur: 15, delay: -5, opacity: 0.68 },
+] as const;
+
+/** Theme-aware floating bubbles for the landing screen */
+function LandingBubbles() {
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden pointer-events-none"
+      style={{ zIndex: 0 }}
+    >
+      {/* depth radial glow at the base */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 50% at 50% 100%, var(--accent-glow, rgba(139,92,246,0.12)) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
+      {LANDING_BUBBLES.map((b, i) => (
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            left: `${b.left}%`,
+            bottom: "-60px",
+            width: b.size + 3,
+            height: b.size + 3,
+            borderRadius: "50%",
+            background:
+              "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
+            padding: "1.5px",
+            boxSizing: "border-box",
+            opacity: b.opacity,
+            animation: `${i % 3 === 0 ? "bubble-rise-sm" : "bubble-rise"} ${b.dur}s ease-in-out ${b.delay}s infinite`,
+            willChange: "transform, opacity",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              borderRadius: "50%",
+              background:
+                "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
+                "rgb(10, 14, 52)",
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Decorative glowing orb behind the card */
-function GlowOrb({ className }: { className?: string }) {
+function GlowOrb({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
     <div
       className={`absolute rounded-full blur-3xl opacity-20 pointer-events-none ${className ?? ""}`}
+      style={style}
     />
   );
 }
@@ -77,13 +157,33 @@ export default function LandingScreen({
       className="relative min-h-screen flex items-center justify-center overflow-hidden px-5 py-10"
       style={{
         background:
-          "linear-gradient(135deg, #050510 0%, #0d0621 35%, #0a0a1a 65%, #050510 100%)",
+          "var(--bg-gradient, linear-gradient(135deg, #050510 0%, #0d0621 35%, #0a0a1a 65%, #050510 100%))",
       }}
     >
+      {/* ── Floating bubble background ── */}
+      <LandingBubbles />
+
       {/* ── Background decorative orbs ── */}
-      <GlowOrb className="w-96 h-96 bg-violet-600 -top-24 -left-24" />
-      <GlowOrb className="w-72 h-72 bg-indigo-600 bottom-10 -right-16" />
-      <GlowOrb className="w-56 h-56 bg-purple-500 top-1/2 left-1/4" />
+      <GlowOrb
+        className="w-96 h-96 -top-24 -left-24"
+        style={
+          { background: "var(--qa-accent, #7c3aed)" } as React.CSSProperties
+        }
+      />
+      <GlowOrb
+        className="w-72 h-72 bottom-10 -right-16"
+        style={
+          {
+            background: "var(--qa-accent-hover, #6366f1)",
+          } as React.CSSProperties
+        }
+      />
+      <GlowOrb
+        className="w-56 h-56 top-1/2 left-1/4"
+        style={
+          { background: "var(--qa-accent, #7c3aed)" } as React.CSSProperties
+        }
+      />
 
       {/* ── Animated grid overlay ── */}
       <div
@@ -104,7 +204,7 @@ export default function LandingScreen({
               <div
                 className="absolute inset-0 rounded-full blur-xl opacity-60"
                 style={{
-                  background: "rgba(139,92,246,0.4)",
+                  background: "var(--accent-glow, rgba(139,92,246,0.4))",
                   animation: "glow-pulse 2s ease-in-out infinite",
                 }}
               />
@@ -118,16 +218,20 @@ export default function LandingScreen({
             className="text-3xl font-extrabold tracking-tight mb-1"
             style={{
               background:
-                "linear-gradient(135deg,#c4b5fd 0%,#818cf8 50%,#38bdf8 100%)",
+                "linear-gradient(135deg, var(--qa-text-primary, #c4b5fd) 0%, var(--qa-accent, #818cf8) 50%, var(--qa-accent-hover, #38bdf8) 100%)",
+              backgroundSize: "200% auto",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
-              animation: "neon-flicker 4s ease-in-out infinite",
+              animation: "text-shimmer 5s linear infinite",
             }}
           >
             InSights AI
           </h1>
-          <p className="text-sm font-medium" style={{ color: "#64748b" }}>
+          <p
+            className="text-sm font-medium"
+            style={{ color: "var(--text-muted, #64748b)" }}
+          >
             AI-Powered Dashboard
           </p>
 
@@ -138,9 +242,10 @@ export default function LandingScreen({
                 key={label}
                 className="text-xs px-3 py-1 rounded-full font-medium"
                 style={{
-                  background: "rgba(139,92,246,0.12)",
-                  border: "1px solid rgba(139,92,246,0.25)",
-                  color: "#a78bfa",
+                  background: "var(--accent-glow, rgba(139,92,246,0.12))",
+                  border:
+                    "1px solid color-mix(in srgb, var(--qa-accent, #8b5cf6) 25%, transparent)",
+                  color: "var(--qa-text-secondary, #a78bfa)",
                 }}
               >
                 {label}
@@ -153,13 +258,13 @@ export default function LandingScreen({
         <div
           className="rounded-2xl p-6 transition-all duration-300"
           style={{
-            background: "rgba(255,255,255,0.04)",
+            background: "var(--surface, rgba(255,255,255,0.04))",
             border: connected
-              ? "1px solid rgba(34,197,94,0.35)"
-              : "1px solid rgba(139,92,246,0.25)",
+              ? "1px solid var(--health-green-border, rgba(34,197,94,0.35))"
+              : "1px solid var(--border, rgba(139,92,246,0.25))",
             backdropFilter: "blur(20px)",
             boxShadow: connected
-              ? "0 0 0 1px rgba(34,197,94,0.1), 0 8px 32px rgba(0,0,0,0.4)"
+              ? "0 0 0 1px var(--health-green-bg, rgba(34,197,94,0.1)), 0 8px 32px rgba(0,0,0,0.4)"
               : "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
           }}
         >
@@ -169,12 +274,14 @@ export default function LandingScreen({
               className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition-all duration-300"
               style={{
                 background: connected
-                  ? "rgba(34,197,94,0.15)"
-                  : "rgba(139,92,246,0.15)",
+                  ? "var(--health-green-bg, rgba(34,197,94,0.15))"
+                  : "var(--accent-glow, rgba(139,92,246,0.15))",
                 border: connected
-                  ? "1px solid rgba(34,197,94,0.5)"
-                  : "1px solid rgba(139,92,246,0.5)",
-                color: connected ? "#22c55e" : "#a78bfa",
+                  ? "1px solid var(--health-green-border, rgba(34,197,94,0.5))"
+                  : "1px solid var(--qa-accent, rgba(139,92,246,0.5))",
+                color: connected
+                  ? "var(--health-green, #22c55e)"
+                  : "var(--qa-text-secondary, #a78bfa)",
               }}
             >
               {connected ? <CheckCircle2 size={14} /> : "1"}
@@ -182,7 +289,7 @@ export default function LandingScreen({
             <div className="flex-1">
               <span
                 className="font-semibold text-sm"
-                style={{ color: "#e2e8f0" }}
+                style={{ color: "var(--text-heading, #e2e8f0)" }}
               >
                 Connect to Jira
               </span>
@@ -190,7 +297,7 @@ export default function LandingScreen({
             {connected && user && (
               <span
                 className="text-xs font-semibold"
-                style={{ color: "#22c55e" }}
+                style={{ color: "var(--health-green, #22c55e)" }}
               >
                 {user.displayName}
               </span>
@@ -203,7 +310,7 @@ export default function LandingScreen({
               <Link
                 size={14}
                 className="absolute left-3 top-1/2 -translate-y-1/2"
-                style={{ color: "#64748b" }}
+                style={{ color: "var(--text-muted, #64748b)" }}
               />
               <input
                 type="url"
@@ -218,17 +325,19 @@ export default function LandingScreen({
                   paddingRight: 12,
                   paddingTop: 10,
                   paddingBottom: 10,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  color: "#e2e8f0",
+                  background: "var(--input-bg, rgba(255,255,255,0.05))",
+                  border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                  color: "var(--text-heading, #e2e8f0)",
                 }}
                 onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(139,92,246,0.6)";
+                  e.currentTarget.style.borderColor =
+                    "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
                   e.currentTarget.style.boxShadow =
-                    "0 0 0 3px rgba(139,92,246,0.15)";
+                    "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                  e.currentTarget.style.borderColor =
+                    "var(--border, rgba(255,255,255,0.1))";
                   e.currentTarget.style.boxShadow = "none";
                 }}
               />
@@ -239,11 +348,11 @@ export default function LandingScreen({
               className="flex items-center gap-1.5 px-4 rounded-xl text-sm font-semibold text-white transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: connecting
-                  ? "rgba(139,92,246,0.5)"
-                  : "linear-gradient(135deg,#8b5cf6,#6366f1)",
+                  ? "var(--accent-glow, rgba(139,92,246,0.5))"
+                  : `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
                 boxShadow: connecting
                   ? "none"
-                  : "0 4px 14px rgba(139,92,246,0.4)",
+                  : "0 4px 14px var(--accent-glow, rgba(139,92,246,0.4))",
               }}
               onMouseEnter={(e) => {
                 if (!connecting)
@@ -267,11 +376,14 @@ export default function LandingScreen({
             <div
               className="mt-4 pt-4"
               style={{
-                borderTop: "1px dashed rgba(255,255,255,0.08)",
+                borderTop: "1px dashed var(--border, rgba(255,255,255,0.08))",
                 animation: "fadeInUp 0.3s ease both",
               }}
             >
-              <p className="text-xs mb-3" style={{ color: "#64748b" }}>
+              <p
+                className="text-xs mb-3"
+                style={{ color: "var(--text-muted, #64748b)" }}
+              >
                 Session not found — enter your Atlassian email &amp; API token.
               </p>
               <div className="flex gap-2 flex-wrap mb-3">
@@ -284,9 +396,9 @@ export default function LandingScreen({
                   className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
                   style={{
                     padding: "9px 12px",
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#e2e8f0",
+                    background: "var(--input-bg, rgba(255,255,255,0.05))",
+                    border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                    color: "var(--text-heading, #e2e8f0)",
                   }}
                 />
                 <input
@@ -298,9 +410,9 @@ export default function LandingScreen({
                   className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
                   style={{
                     padding: "9px 12px",
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#e2e8f0",
+                    background: "var(--input-bg, rgba(255,255,255,0.05))",
+                    border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                    color: "var(--text-heading, #e2e8f0)",
                   }}
                 />
                 <button
@@ -308,22 +420,26 @@ export default function LandingScreen({
                   disabled={connecting}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white whitespace-nowrap disabled:opacity-50"
                   style={{
-                    background: "linear-gradient(135deg,#8b5cf6,#6366f1)",
-                    boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
+                    background: `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
+                    boxShadow:
+                      "0 4px 12px var(--accent-glow, rgba(139,92,246,0.3))",
                   }}
                 >
                   <Lock size={11} />
                   {connecting ? "…" : "Authenticate"}
                 </button>
               </div>
-              <p className="text-xs" style={{ color: "#64748b" }}>
+              <p
+                className="text-xs"
+                style={{ color: "var(--text-muted, #64748b)" }}
+              >
                 Generate a token at{" "}
                 <a
                   href="https://id.atlassian.com/manage-profile/security/api-tokens"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2"
-                  style={{ color: "#a78bfa" }}
+                  style={{ color: "var(--qa-text-secondary, #a78bfa)" }}
                 >
                   Atlassian → API Tokens
                 </a>
@@ -337,8 +453,8 @@ export default function LandingScreen({
           <div
             className="rounded-2xl p-6 transition-all duration-300"
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(139,92,246,0.25)",
+              background: "var(--surface, rgba(255,255,255,0.04))",
+              border: "1px solid var(--border, rgba(139,92,246,0.25))",
               backdropFilter: "blur(20px)",
               boxShadow:
                 "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
@@ -350,16 +466,17 @@ export default function LandingScreen({
               <div
                 className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: "rgba(139,92,246,0.15)",
-                  border: "1px solid rgba(139,92,246,0.5)",
-                  color: "#a78bfa",
+                  background: "var(--accent-glow, rgba(139,92,246,0.15))",
+                  border:
+                    "1px solid color-mix(in srgb, var(--qa-accent, #8b5cf6) 50%, transparent)",
+                  color: "var(--qa-text-secondary, #a78bfa)",
                 }}
               >
                 <FolderOpen size={14} />
               </div>
               <span
                 className="font-semibold text-sm"
-                style={{ color: "#e2e8f0" }}
+                style={{ color: "var(--text-heading, #e2e8f0)" }}
               >
                 Select Project
               </span>
@@ -372,9 +489,11 @@ export default function LandingScreen({
               className="w-full rounded-xl text-sm outline-none cursor-pointer mb-3 transition-all duration-200"
               style={{
                 padding: "10px 14px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                color: selectedKey ? "#e2e8f0" : "#64748b",
+                background: "var(--input-bg, rgba(255,255,255,0.05))",
+                border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                color: selectedKey
+                  ? "var(--text-heading, #e2e8f0)"
+                  : "var(--text-muted, #64748b)",
                 appearance: "none",
                 WebkitAppearance: "none",
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
@@ -388,7 +507,10 @@ export default function LandingScreen({
                 <option
                   key={p.key}
                   value={p.key}
-                  style={{ background: "#0a0a1a", color: "#e2e8f0" }}
+                  style={{
+                    background: "var(--qa-bg-primary, #0a0a1a)",
+                    color: "var(--qa-text-primary, #e2e8f0)",
+                  }}
                 >
                   {p.name} ({p.key})
                 </option>
@@ -402,27 +524,27 @@ export default function LandingScreen({
               className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: selectedKey
-                  ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
-                  : "rgba(255,255,255,0.05)",
+                  ? `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`
+                  : "var(--surface, rgba(255,255,255,0.05))",
                 border: selectedKey
                   ? "none"
-                  : "1px solid rgba(255,255,255,0.1)",
-                color: selectedKey ? "#fff" : "#64748b",
+                  : "1px solid var(--border, rgba(255,255,255,0.1))",
+                color: selectedKey ? "#fff" : "var(--text-muted, #64748b)",
                 boxShadow: selectedKey
-                  ? "0 4px 20px rgba(139,92,246,0.4)"
+                  ? "0 4px 20px var(--accent-glow, rgba(139,92,246,0.4))"
                   : "none",
               }}
               onMouseEnter={(e) => {
                 if (selectedKey) {
                   e.currentTarget.style.transform = "translateY(-2px)";
                   e.currentTarget.style.boxShadow =
-                    "0 8px 28px rgba(139,92,246,0.55)";
+                    "0 8px 28px var(--accent-glow, rgba(139,92,246,0.55))";
                 }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = "translateY(0)";
                 e.currentTarget.style.boxShadow = selectedKey
-                  ? "0 4px 20px rgba(139,92,246,0.4)"
+                  ? "0 4px 20px var(--accent-glow, rgba(139,92,246,0.4))"
                   : "none";
               }}
             >
@@ -433,7 +555,10 @@ export default function LandingScreen({
         )}
 
         {/* ── Footer ── */}
-        <p className="text-center text-xs mt-1" style={{ color: "#334155" }}>
+        <p
+          className="text-center text-xs mt-1"
+          style={{ color: "var(--text-muted, #334155)" }}
+        >
           InSights AI · AI-Powered QA Analytics
         </p>
       </div>

@@ -731,24 +731,77 @@
         border-top: 1px solid var(--border);
     }
 
-    /* ── Loading Overlay ─────────────────────────────────── */
+    /* ── Loading Overlay — Gear Animation ───────────────── */
+    /* ── Loading Overlay — Gear System ─────────────────── */
     .loading-overlay {
-        @apply fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-300;
-        background: rgba(0, 0, 0, 0.65);
-        backdrop-filter: blur(8px);
+        @apply fixed inset-0 z-[9999] flex items-center justify-center;
+        background: rgba(26, 26, 46, 0.92);
+        backdrop-filter: blur(10px);
     }
     .loading-overlay.hidden {
         display: none !important;
     }
-    .spinner {
-        @apply w-12 h-12 rounded-full;
-        border: 3px solid var(--border);
-        border-top-color: var(--accent);
-        animation: spin 0.8s linear infinite;
+
+    /* Gear system container — same 350×280 viewport as the original */
+    .gear-system {
+        position: relative;
+        width: 350px;
+        height: 280px;
+        transform-origin: center center;
     }
+
+    /* Individual gear wrapper — absolutely positioned inside .gear-system */
+    .gear-wrapper {
+        position: absolute;
+    }
+
+    /* Glow via CSS custom property set per wrapper */
+    .gear-glow {
+        filter: drop-shadow(0 0 6px var(--gear-color));
+    }
+
+    /* Progress bar */
+    .loading-bar-container {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 250px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .loading-bar {
+        height: 100%;
+        width: 0%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #e94560, #ffb830, #00d2ff);
+        background-size: 200% 100%;
+        animation:
+            barProgress 3s ease-in-out infinite,
+            barShimmer 1.5s linear infinite;
+    }
+
+    /* Steam particles */
+    .steam {
+        position: absolute;
+        border-radius: 50%;
+        animation: steamRise 2s ease-out forwards;
+    }
+
+    /* Loading label */
     .loading-text {
-        @apply mt-4 text-sm;
-        color: var(--text-muted);
+        position: absolute;
+        bottom: -35px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.5);
+        letter-spacing: 6px;
+        text-transform: uppercase;
+        white-space: nowrap;
     }
 
     /* ── Toast ───────────────────────────────────────────── */
@@ -895,6 +948,48 @@
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+@keyframes rotateCW {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@keyframes rotateCCW {
+    to {
+        transform: rotate(-360deg);
+    }
+}
+@keyframes barProgress {
+    0% {
+        width: 0%;
+    }
+    50% {
+        width: 100%;
+    }
+    51% {
+        width: 100%;
+    }
+    100% {
+        width: 0%;
+    }
+}
+@keyframes barShimmer {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
+}
+@keyframes steamRise {
+    0% {
+        opacity: 0.8;
+        transform: translateY(0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-60px) translateX(var(--drift)) scale(0.3);
     }
 }
 @keyframes pulse {

@@ -11,7 +11,10 @@ import {
   calculateTopStories,
   calculateBugLeakage,
   calculateOverburntItems,
+  calculateOverburntAnalysis,
   calculateFlowImpact,
+  calculateEarlyCompletions,
+  calculateCodeIntelligence,
 } from "../utils/qaCalculations";
 
 // Derive filtered QAIssue[] from live Jira data in the store
@@ -84,12 +87,20 @@ export const useBugLeakage = () => {
 
 export const useOverburntItems = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const overburntIssues = useDashboardStore((s) => s.overburntIssues);
   const issues = useFilteredIssues();
   const data = useMemo(
     () => (projectDataLoaded ? calculateOverburntItems(issues) : []),
     [projectDataLoaded, issues],
   );
-  return { data, isLoading: !projectDataLoaded, error: null };
+  const analysis = useMemo(
+    () =>
+      projectDataLoaded
+        ? calculateOverburntAnalysis(mapJiraIssuesToQA(overburntIssues))
+        : null,
+    [projectDataLoaded, overburntIssues],
+  );
+  return { data, analysis, isLoading: !projectDataLoaded, error: null };
 };
 
 export const useFlowImpact = () => {
@@ -98,6 +109,21 @@ export const useFlowImpact = () => {
   const data = useMemo(
     () => (projectDataLoaded ? calculateFlowImpact(issues) : []),
     [projectDataLoaded, issues],
+  );
+  return { data, isLoading: !projectDataLoaded, error: null };
+};
+
+export const useEarlyCompletions = () => {
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const earlyCompletionIssues = useDashboardStore(
+    (s) => s.earlyCompletionIssues,
+  );
+  const data = useMemo(
+    () =>
+      projectDataLoaded
+        ? calculateEarlyCompletions(mapJiraIssuesToQA(earlyCompletionIssues))
+        : null,
+    [projectDataLoaded, earlyCompletionIssues],
   );
   return { data, isLoading: !projectDataLoaded, error: null };
 };
@@ -229,4 +255,15 @@ export const useAIRecommendations = () => {
   ]);
 
   return { data, isLoading, error };
+};
+
+export const useCodeIntelligence = () => {
+  const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
+  const codeIntelIssues = useDashboardStore((s) => s.codeIntelIssues);
+  const data = useMemo(
+    () =>
+      projectDataLoaded ? calculateCodeIntelligence(codeIntelIssues) : null,
+    [projectDataLoaded, codeIntelIssues],
+  );
+  return { data, isLoading: !projectDataLoaded, error: null };
 };

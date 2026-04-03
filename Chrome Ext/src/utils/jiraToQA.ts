@@ -105,6 +105,18 @@ export function mapJiraIssuesToQA(issues: JiraIssue[]): QAIssue[] {
       reopenCount: issue.reopenCount ?? (status === "Reopened" ? 1 : 0),
       assigneeChanges: issue.assigneeChanges ?? 0,
       slaHours: SLA_HOURS[priority],
+      issueType: issue.issueType || "",
+      workratio:
+        issue.workratio ??
+        (issue.timeEstimate && issue.timeSpent
+          ? Math.round((issue.timeSpent / issue.timeEstimate) * 100)
+          : 0),
+      worklogs: (issue.worklogs ?? []).map((w) => ({
+        author: w.author,
+        timeSpentSeconds: w.timeSpentSeconds,
+        timeSpentHours: Math.round((w.timeSpentSeconds / 3600) * 100) / 100,
+        started: w.started,
+      })),
     };
   });
 }

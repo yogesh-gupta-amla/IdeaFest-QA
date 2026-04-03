@@ -1,4 +1,5 @@
 export interface JiraIssue {
+  id: string;
   key: string;
   summary: string;
   status: string;
@@ -28,6 +29,12 @@ export interface JiraIssue {
   statusChanges?: Array<{ from: string; to: string; date: string; by: string }>;
   reopenCount?: number;
   assigneeChanges?: number;
+  workratio?: number | null;
+  worklogs?: Array<{
+    author: string;
+    timeSpentSeconds: number;
+    started: string;
+  }>;
 }
 
 export interface JiraUser {

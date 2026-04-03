@@ -15,6 +15,14 @@ export type Environment =
 export type AgeingStatus = "FRESH" | "AT_RISK" | "AGED";
 export type HealthStatus = "GREEN" | "RED";
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+export type OverburntSeverity = "Moderate" | "High" | "Critical";
+
+export interface WorklogEntry {
+  author: string;
+  timeSpentSeconds: number;
+  timeSpentHours: number;
+  started: string;
+}
 
 export interface StatusChange {
   from: IssueStatus;
@@ -48,6 +56,9 @@ export interface QAIssue {
   reopenCount: number;
   assigneeChanges: number;
   slaHours: number;
+  issueType: string;
+  workratio: number;
+  worklogs: WorklogEntry[];
 }
 
 export interface TrendPoint {
@@ -122,6 +133,81 @@ export interface BugLeakageItem {
   issue: QAIssue;
   leakageType: string;
   detectedIn: string;
+}
+
+export interface OverburntContributor {
+  name: string;
+  timeLogged: number;
+  isAssignee: boolean;
+  contributionPercentage: number;
+}
+
+export interface OverburntItemDetail {
+  issue: QAIssue;
+  originalEstimate: number;
+  timeSpent: number;
+  workratio: number;
+  overburnPercentage: number;
+  severity: OverburntSeverity;
+  topOverburnContributor: OverburntContributor | null;
+  allContributors: { name: string; timeLogged: number }[];
+  overburnReason: string;
+  actionableFix: string;
+  expectedImprovement: string;
+}
+
+export interface CrossIssueContributor {
+  name: string;
+  totalExtraTimeLogged: number;
+  issuesInvolved: number;
+  risk: string;
+  recommendation: string;
+}
+
+export interface AssigneeMismatch {
+  issueId: string;
+  assignee: string;
+  actualTopContributor: string;
+  insight: string;
+}
+
+export interface OverburntAnalysis {
+  executiveSummary: string;
+  overburnInsights: {
+    totalItems: number;
+    moderateOverburn: number;
+    highOverburn: number;
+    criticalOverburn: number;
+  };
+  items: OverburntItemDetail[];
+  crossIssueAnalysis: {
+    topOverburnContributors: CrossIssueContributor[];
+    assigneeVsActualMismatch: AssigneeMismatch[];
+  };
+  additionalInsights: {
+    highRiskIssueTypes: { issuetype: string; reason: string }[];
+    priorityBasedOverburn: { priority: string; observation: string }[];
+    cycleTimeFlags: { issueId: string; delayReason: string }[];
+  };
+  resourceOptimization: {
+    overutilized: {
+      name: string;
+      totalLoggedTime: number;
+      risk: string;
+      recommendation: string;
+    }[];
+    underutilized: {
+      name: string;
+      utilizationGap: string;
+      recommendation: string;
+    }[];
+  };
+  aiRecommendation: {
+    headline: string;
+    keyDriver: string;
+    expectedImpact: string;
+    confidence: "High" | "Medium" | "Low";
+  };
 }
 
 export interface OverburntItem {
@@ -255,6 +341,23 @@ export interface AIProjectAnalysis {
   timeRangeLabel: string;
 }
 
+export interface EarlyCompletionItem {
+  issue: QAIssue;
+  createdDate: string;
+  resolutionDate: string;
+  originalEstimateHours: number;
+  timeTakenHours: number;
+  timeSavedHours: number;
+}
+
+export interface EarlyCompletionAnalysis {
+  items: EarlyCompletionItem[];
+  totalEarlyItems: number;
+  totalDoneItems: number;
+  avgTimeSavedHours: number;
+  earlyCompletionPercentage: number;
+}
+
 export interface DashboardFilters {
   dateRange: [string, string] | null;
   severity: Priority[];
@@ -270,4 +373,91 @@ export interface ThemeConfig {
   isDark: boolean;
   primaryColor: string;
   cssVars: Record<string, string>;
+}
+
+// ── Code Intelligence types ──────────────────────────────────────────────
+export interface LinkedCommit {
+  id: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+  repo: string;
+  files: string[];
+}
+
+export interface LinkedPR {
+  id: string;
+  title: string;
+  url: string;
+  status: string;
+  author: string;
+}
+
+export interface CodeIntelIssue {
+  issueId: string;
+  issueKey: string;
+  summary: string;
+  description: string;
+  labels: string[];
+  components: string[];
+  assignee: string;
+  issueType: string;
+  priority: string;
+  status: string;
+  resolved: string | null;
+  commits: LinkedCommit[];
+  pullRequests: LinkedPR[];
+}
+
+export interface ReusableComponent {
+  componentName: string;
+  description: string;
+  relatedIssues: string[];
+  relevantCommits: { commitId: string; url: string; summary: string }[];
+  reusabilityScore: "High" | "Medium" | "Low";
+  recommendedUsage: string;
+}
+
+export interface RecentImplementation {
+  featureArea: string;
+  issueId: string;
+  commitId: string;
+  url: string;
+  description: string;
+  filesImpacted: string[];
+}
+
+export interface DuplicateDetection {
+  issueIds: string[];
+  similarityReason: string;
+  risk: string;
+  recommendation: string;
+}
+
+export interface DeveloperInsight {
+  developer: string;
+  expertiseArea: string;
+  notableCommits: string[];
+  recommendation: string;
+}
+
+export interface CodeIntelRecommendation {
+  headline: string;
+  component: string;
+  action: string;
+  expectedBenefit: string;
+}
+
+export interface CodeIntelAnalysis {
+  executiveSummary: string;
+  reusableComponents: ReusableComponent[];
+  recentImplementations: RecentImplementation[];
+  duplicateDetection: DuplicateDetection[];
+  aiRecommendations: CodeIntelRecommendation[];
+  developerInsights: DeveloperInsight[];
+  totalIssuesAnalyzed: number;
+  totalCommits: number;
+  totalPRs: number;
+  hasDevInfo: boolean;
 }

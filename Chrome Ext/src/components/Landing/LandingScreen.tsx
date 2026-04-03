@@ -1,6 +1,15 @@
 import React, { useState } from "react";
 import InsightsLogo from "../common/InsightsLogo";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
+import {
+  Link,
+  Lock,
+  Zap,
+  ChevronRight,
+  CheckCircle2,
+  FolderOpen,
+  RefreshCw,
+} from "lucide-react";
 
 interface LandingScreenProps {
   jiraUrl: string;
@@ -13,6 +22,15 @@ interface LandingScreenProps {
     token?: string,
   ) => Promise<boolean | void>;
   onLoadProject: (key: string, name: string) => void;
+}
+
+/** Decorative glowing orb behind the card */
+function GlowOrb({ className }: { className?: string }) {
+  return (
+    <div
+      className={`absolute rounded-full blur-3xl opacity-20 pointer-events-none ${className ?? ""}`}
+    />
+  );
 }
 
 export default function LandingScreen({
@@ -56,176 +74,219 @@ export default function LandingScreen({
 
   return (
     <div
+      className="relative min-h-screen flex items-center justify-center overflow-hidden px-5 py-10"
       style={{
-        minHeight: "100vh",
-        background: "var(--qa-bg-primary, #0f1117)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
+        background:
+          "linear-gradient(135deg, #050510 0%, #0d0621 35%, #0a0a1a 65%, #050510 100%)",
       }}
     >
-      <div style={{ width: "100%", maxWidth: 480 }}>
-        {/* Logo / Title */}
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginBottom: 14,
-            }}
-          >
-            <InsightsLogo size={72} />
+      {/* ── Background decorative orbs ── */}
+      <GlowOrb className="w-96 h-96 bg-violet-600 -top-24 -left-24" />
+      <GlowOrb className="w-72 h-72 bg-indigo-600 bottom-10 -right-16" />
+      <GlowOrb className="w-56 h-56 bg-purple-500 top-1/2 left-1/4" />
+
+      {/* ── Animated grid overlay ── */}
+      <div
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(139,92,246,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,0.8) 1px,transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
+      />
+
+      {/* ── Card wrapper ── */}
+      <div className="relative w-full max-w-[460px] flex flex-col gap-4 animate-[fadeInUp_0.6s_cubic-bezier(0.4,0,0.2,1)_both]">
+        {/* ── Logo / Hero ── */}
+        <div className="text-center mb-2">
+          <div className="flex justify-center mb-5">
+            <div className="relative">
+              <div
+                className="absolute inset-0 rounded-full blur-xl opacity-60"
+                style={{
+                  background: "rgba(139,92,246,0.4)",
+                  animation: "glow-pulse 2s ease-in-out infinite",
+                }}
+              />
+              <div className="relative">
+                <InsightsLogo size={72} />
+              </div>
+            </div>
           </div>
+
           <h1
+            className="text-3xl font-extrabold tracking-tight mb-1"
             style={{
-              margin: 0,
-              fontSize: 26,
-              fontWeight: 800,
-              color: "var(--qa-text-primary, #f1f5f9)",
-              letterSpacing: "-0.5px",
+              background:
+                "linear-gradient(135deg,#c4b5fd 0%,#818cf8 50%,#38bdf8 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+              animation: "neon-flicker 4s ease-in-out infinite",
             }}
           >
             InSights AI
           </h1>
-          <p
-            style={{
-              margin: "6px 0 0",
-              fontSize: 13,
-              color: "var(--qa-text-muted, #64748b)",
-            }}
-          >
-            AI-Powered Dashboard
+          <p className="text-sm font-medium" style={{ color: "#64748b" }}>
+            AI-Powered QA Dashboard
           </p>
+
+          {/* Feature pills */}
+          <div className="flex justify-center gap-2 mt-4 flex-wrap">
+            {["Live Metrics", "AI Analysis", "Sprint Health"].map((label) => (
+              <span
+                key={label}
+                className="text-xs px-3 py-1 rounded-full font-medium"
+                style={{
+                  background: "rgba(139,92,246,0.12)",
+                  border: "1px solid rgba(139,92,246,0.25)",
+                  color: "#a78bfa",
+                }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
 
-        {/* Step 1 – Connect */}
+        {/* ── Step 1: Connect to Jira ── */}
         <div
+          className="rounded-2xl p-6 transition-all duration-300"
           style={{
-            background: "var(--qa-bg-card, #1e2230)",
-            border: "1px solid var(--qa-border, #2d3448)",
-            borderRadius: 14,
-            padding: 24,
-            marginBottom: 16,
+            background: "rgba(255,255,255,0.04)",
+            border: connected
+              ? "1px solid rgba(34,197,94,0.35)"
+              : "1px solid rgba(139,92,246,0.25)",
+            backdropFilter: "blur(20px)",
+            boxShadow: connected
+              ? "0 0 0 1px rgba(34,197,94,0.1), 0 8px 32px rgba(0,0,0,0.4)"
+              : "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 16,
-            }}
-          >
-            <span
+          {/* Step header */}
+          <div className="flex items-center gap-3 mb-5">
+            <div
+              className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition-all duration-300"
               style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
                 background: connected
                   ? "rgba(34,197,94,0.15)"
-                  : "rgba(79,142,247,0.15)",
-                border: `1px solid ${connected ? "rgba(34,197,94,0.4)" : "rgba(79,142,247,0.4)"}`,
-                color: connected ? "#22c55e" : "#4f8ef7",
-                fontSize: 11,
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                  : "rgba(139,92,246,0.15)",
+                border: connected
+                  ? "1px solid rgba(34,197,94,0.5)"
+                  : "1px solid rgba(139,92,246,0.5)",
+                color: connected ? "#22c55e" : "#a78bfa",
               }}
             >
-              {connected ? "✓" : "1"}
-            </span>
-            <span
-              style={{
-                fontWeight: 600,
-                fontSize: 14,
-                color: "var(--qa-text-primary, #f1f5f9)",
-              }}
-            >
-              Connect to Jira
-            </span>
+              {connected ? <CheckCircle2 size={14} /> : "1"}
+            </div>
+            <div className="flex-1">
+              <span
+                className="font-semibold text-sm"
+                style={{ color: "#e2e8f0" }}
+              >
+                Connect to Jira
+              </span>
+            </div>
             {connected && user && (
               <span
-                style={{
-                  marginLeft: "auto",
-                  fontSize: 11,
-                  color: "#22c55e",
-                }}
+                className="text-xs font-semibold"
+                style={{ color: "#22c55e" }}
               >
                 {user.displayName}
               </span>
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              type="url"
-              placeholder="https://company.atlassian.net"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              style={{
-                flex: 1,
-                background: "var(--qa-bg-secondary, #161a27)",
-                border: "1px solid var(--qa-border, #2d3448)",
-                borderRadius: 8,
-                color: "var(--qa-text-primary, #f1f5f9)",
-                padding: "9px 12px",
-                fontSize: 13,
-                outline: "none",
-              }}
-            />
+          {/* URL + Connect button */}
+          <div className="flex gap-2.5">
+            <div className="relative flex-1">
+              <Link
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2"
+                style={{ color: "#64748b" }}
+              />
+              <input
+                type="url"
+                placeholder="https://company.atlassian.net"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full rounded-xl text-sm outline-none transition-all duration-200"
+                style={{
+                  paddingLeft: 34,
+                  paddingRight: 12,
+                  paddingTop: 10,
+                  paddingBottom: 10,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#e2e8f0",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(139,92,246,0.6)";
+                  e.currentTarget.style.boxShadow =
+                    "0 0 0 3px rgba(139,92,246,0.15)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              />
+            </div>
             <button
               onClick={handleSessionConnect}
-              disabled={connecting}
+              disabled={connecting || !url.trim()}
+              className="flex items-center gap-1.5 px-4 rounded-xl text-sm font-semibold text-white transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                background: "var(--qa-accent, #4f8ef7)",
-                border: "none",
-                borderRadius: 8,
-                color: "#fff",
-                padding: "9px 18px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: connecting ? "not-allowed" : "pointer",
-                opacity: connecting ? 0.7 : 1,
-                whiteSpace: "nowrap",
+                background: connecting
+                  ? "rgba(139,92,246,0.5)"
+                  : "linear-gradient(135deg,#8b5cf6,#6366f1)",
+                boxShadow: connecting
+                  ? "none"
+                  : "0 4px 14px rgba(139,92,246,0.4)",
+              }}
+              onMouseEnter={(e) => {
+                if (!connecting)
+                  e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
               }}
             >
-              {connecting ? "…" : connected ? "Reconnect" : "Connect"}
+              {connecting ? (
+                <RefreshCw size={13} className="animate-spin" />
+              ) : (
+                <Zap size={13} />
+              )}
+              {connecting ? "Connecting…" : connected ? "Reconnect" : "Connect"}
             </button>
           </div>
 
           {/* Token auth fallback */}
           {showTokenSection && !connected && (
-            <div style={{ marginTop: 14 }}>
-              <p
-                style={{
-                  margin: "0 0 10px",
-                  fontSize: 12,
-                  color: "var(--qa-text-muted, #64748b)",
-                }}
-              >
+            <div
+              className="mt-4 pt-4"
+              style={{
+                borderTop: "1px dashed rgba(255,255,255,0.08)",
+                animation: "fadeInUp 0.3s ease both",
+              }}
+            >
+              <p className="text-xs mb-3" style={{ color: "#64748b" }}>
                 Session not found — enter your Atlassian email &amp; API token.
               </p>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="flex gap-2 flex-wrap mb-3">
                 <input
                   type="email"
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="off"
+                  className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
                   style={{
-                    flex: 1,
-                    minWidth: 140,
-                    background: "var(--qa-bg-secondary, #161a27)",
-                    border: "1px solid var(--qa-border, #2d3448)",
-                    borderRadius: 8,
-                    color: "var(--qa-text-primary, #f1f5f9)",
-                    padding: "8px 12px",
-                    fontSize: 13,
-                    outline: "none",
+                    padding: "9px 12px",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "#e2e8f0",
                   }}
                 />
                 <input
@@ -234,153 +295,147 @@ export default function LandingScreen({
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   autoComplete="off"
+                  className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
                   style={{
-                    flex: 1,
-                    minWidth: 140,
-                    background: "var(--qa-bg-secondary, #161a27)",
-                    border: "1px solid var(--qa-border, #2d3448)",
-                    borderRadius: 8,
-                    color: "var(--qa-text-primary, #f1f5f9)",
-                    padding: "8px 12px",
-                    fontSize: 13,
-                    outline: "none",
+                    padding: "9px 12px",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "#e2e8f0",
                   }}
                 />
                 <button
                   onClick={handleTokenConnect}
                   disabled={connecting}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white whitespace-nowrap disabled:opacity-50"
                   style={{
-                    background: "var(--qa-accent, #4f8ef7)",
-                    border: "none",
-                    borderRadius: 8,
-                    color: "#fff",
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: connecting ? "not-allowed" : "pointer",
-                    opacity: connecting ? 0.7 : 1,
-                    whiteSpace: "nowrap",
+                    background: "linear-gradient(135deg,#8b5cf6,#6366f1)",
+                    boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
                   }}
                 >
+                  <Lock size={11} />
                   {connecting ? "…" : "Authenticate"}
                 </button>
               </div>
-              <p
-                style={{
-                  margin: "8px 0 0",
-                  fontSize: 11,
-                  color: "var(--qa-text-muted, #64748b)",
-                }}
-              >
+              <p className="text-xs" style={{ color: "#64748b" }}>
                 Generate a token at{" "}
                 <a
                   href="https://id.atlassian.com/manage-profile/security/api-tokens"
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: "var(--qa-accent, #4f8ef7)" }}
+                  className="underline underline-offset-2"
+                  style={{ color: "#a78bfa" }}
                 >
-                  Atlassian → Security → API Tokens
+                  Atlassian → API Tokens
                 </a>
               </p>
             </div>
           )}
         </div>
 
-        {/* Step 2 – Select Project */}
+        {/* ── Step 2: Select Project ── */}
         {connected && (
           <div
+            className="rounded-2xl p-6 transition-all duration-300"
             style={{
-              background: "var(--qa-bg-card, #1e2230)",
-              border: "1px solid var(--qa-border, #2d3448)",
-              borderRadius: 14,
-              padding: 24,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(139,92,246,0.25)",
+              backdropFilter: "blur(20px)",
+              boxShadow:
+                "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
+              animation: "fadeInUp 0.4s ease both",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 16,
-              }}
-            >
-              <span
+            {/* Step header */}
+            <div className="flex items-center gap-3 mb-5">
+              <div
+                className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0"
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  background: "rgba(79,142,247,0.15)",
-                  border: "1px solid rgba(79,142,247,0.4)",
-                  color: "#4f8ef7",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  background: "rgba(139,92,246,0.15)",
+                  border: "1px solid rgba(139,92,246,0.5)",
+                  color: "#a78bfa",
                 }}
               >
-                2
-              </span>
+                <FolderOpen size={14} />
+              </div>
               <span
-                style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: "var(--qa-text-primary, #f1f5f9)",
-                }}
+                className="font-semibold text-sm"
+                style={{ color: "#e2e8f0" }}
               >
                 Select Project
               </span>
             </div>
 
+            {/* Project dropdown */}
             <select
               value={selectedKey}
               onChange={(e) => setSelectedKey(e.target.value)}
+              className="w-full rounded-xl text-sm outline-none cursor-pointer mb-3 transition-all duration-200"
               style={{
-                width: "100%",
-                background: "var(--qa-bg-secondary, #161a27)",
-                border: "1px solid var(--qa-border, #2d3448)",
-                borderRadius: 8,
-                color: selectedKey
-                  ? "var(--qa-text-primary, #f1f5f9)"
-                  : "var(--qa-text-muted, #64748b)",
-                padding: "9px 12px",
-                fontSize: 13,
-                outline: "none",
-                cursor: "pointer",
-                marginBottom: 12,
+                padding: "10px 14px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: selectedKey ? "#e2e8f0" : "#64748b",
+                appearance: "none",
+                WebkitAppearance: "none",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 14px center",
+                paddingRight: 36,
               }}
             >
               <option value="">— Choose a project —</option>
               {projects.map((p) => (
-                <option key={p.key} value={p.key}>
+                <option
+                  key={p.key}
+                  value={p.key}
+                  style={{ background: "#0a0a1a", color: "#e2e8f0" }}
+                >
                   {p.name} ({p.key})
                 </option>
               ))}
             </select>
+
+            {/* Load Dashboard button */}
             <button
               onClick={handleLoadDashboard}
               disabled={!selectedKey}
+              className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
-                width: "100%",
                 background: selectedKey
-                  ? "var(--qa-accent, #4f8ef7)"
-                  : "var(--qa-bg-secondary, #161a27)",
+                  ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
+                  : "rgba(255,255,255,0.05)",
                 border: selectedKey
                   ? "none"
-                  : "1px solid var(--qa-border, #2d3448)",
-                borderRadius: 8,
-                color: selectedKey ? "#fff" : "var(--qa-text-muted, #64748b)",
-                padding: "10px",
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: selectedKey ? "pointer" : "not-allowed",
-                transition: "background 0.2s",
+                  : "1px solid rgba(255,255,255,0.1)",
+                color: selectedKey ? "#fff" : "#64748b",
+                boxShadow: selectedKey
+                  ? "0 4px 20px rgba(139,92,246,0.4)"
+                  : "none",
+              }}
+              onMouseEnter={(e) => {
+                if (selectedKey) {
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 8px 28px rgba(139,92,246,0.55)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = selectedKey
+                  ? "0 4px 20px rgba(139,92,246,0.4)"
+                  : "none";
               }}
             >
-              Load Dashboard →
+              Load Dashboard
+              <ChevronRight size={15} />
             </button>
           </div>
         )}
+
+        {/* ── Footer ── */}
+        <p className="text-center text-xs mt-1" style={{ color: "#334155" }}>
+          InSights AI · AI-Powered QA Analytics
+        </p>
       </div>
     </div>
   );

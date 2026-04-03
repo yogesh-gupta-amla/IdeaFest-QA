@@ -7,6 +7,7 @@ import {
   fetchProjects,
   fetchJiraIssues,
   fetchActiveSprint,
+  fetchDevInfo,
 } from "./services/jiraService";
 import { computeMetrics } from "./services/metricsService";
 import type {
@@ -19,7 +20,6 @@ import type {
   SnapshotMetrics,
   Theme,
 } from "./types";
-import LandingScreen from "./components/Landing/LandingScreen";
 import LoadingOverlay from "./components/common/LoadingOverlay";
 import { useDashboardStore } from "./store/useStore";
 import { QA_THEMES, applyTheme } from "./themes";
@@ -29,6 +29,7 @@ import {
   getResolvedTimeRangeClause,
   type QueryTimeRange,
 } from "./utils/queryTimeRange";
+import LandingScreen from "./components/Landing/LandingScreen";
 
 export default function App() {
   const {
@@ -235,6 +236,9 @@ export default function App() {
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
       store.setAgeingIssues([]);
+      store.setOverburntIssues([]);
+      store.setEarlyCompletionIssues([]);
+      store.setCodeIntelIssues([]);
 
       showLoading(`Fetching ${timeRange} QA data for ${projectKey}…`);
 
@@ -246,6 +250,9 @@ export default function App() {
         resolvedResult,
         recentResolvedResult,
         ageingResult,
+        overburntResult,
+        earlyCompletionResult,
+        codeIntelResult,
         sprintResult,
       ] = await Promise.all([
         fetchJiraIssues(
@@ -278,6 +285,24 @@ export default function App() {
           500,
           token,
         ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND ${timeRange === "today" ? "worklogDate >= startOfDay()" : "worklogDate >= -7d"} ORDER BY updated DESC`,
+          500,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0 AND ${resolvedRangeClause} ORDER BY resolved DESC`,
+          500,
+          token,
+        ),
+        fetchJiraIssues(
+          jiraUrl,
+          `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Task, Sub-task, Epic, Bug, Defect) AND ${resolvedRangeClause} ORDER BY resolved DESC`,
+          300,
+          token,
+        ),
         fetchActiveSprint(jiraUrl, projectKey, token),
       ]);
 
@@ -299,6 +324,70 @@ export default function App() {
       const ageingIssues = ageingResult.success
         ? ageingResult.issues || []
         : [];
+      const overburntIssues = overburntResult.success
+        ? overburntResult.issues || []
+        : [];
+      const earlyCompletionIssues = earlyCompletionResult.success
+        ? earlyCompletionResult.issues || []
+        : [];
+      const codeIntelRawIssues = codeIntelResult.success
+        ? codeIntelResult.issues || []
+        : [];
+
+      // ── Enrich code intel issues with dev-status (commits/PRs) ──
+      const codeIntelIssueIds = codeIntelRawIssues
+        .filter((i) => i.id)
+        .map((i) => i.id);
+      let devInfoMap: Record<
+        string,
+        {
+          commits: {
+            id: string;
+            message: string;
+            author: string;
+            date: string;
+            url: string;
+            repo: string;
+            files: string[];
+          }[];
+          pullRequests: {
+            id: string;
+            title: string;
+            url: string;
+            status: string;
+            author: string;
+          }[];
+        }
+      > = {};
+      if (codeIntelIssueIds.length > 0) {
+        try {
+          const devResult = await fetchDevInfo(
+            jiraUrl,
+            codeIntelIssueIds,
+            token,
+          );
+          if (devResult.success && devResult.devInfo) {
+            devInfoMap = devResult.devInfo;
+          }
+        } catch {
+          // Dev info is optional — continue without it
+        }
+      }
+      const codeIntelIssues = codeIntelRawIssues.map((issue) => ({
+        issueId: issue.id || "",
+        issueKey: issue.key,
+        summary: issue.summary,
+        description: issue.description || "",
+        labels: issue.labels || [],
+        components: issue.components || [],
+        assignee: issue.assignee,
+        issueType: issue.issueType,
+        priority: issue.priority,
+        status: issue.status,
+        resolved: issue.resolved || null,
+        commits: devInfoMap[issue.id]?.commits || [],
+        pullRequests: devInfoMap[issue.id]?.pullRequests || [],
+      }));
 
       // Load snapshot for trends
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -319,6 +408,9 @@ export default function App() {
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
       store.setAgeingIssues(ageingIssues);
+      store.setOverburntIssues(overburntIssues);
+      store.setEarlyCompletionIssues(earlyCompletionIssues);
+      store.setCodeIntelIssues(codeIntelIssues);
       store.setProjectDataLoaded(true);
       store.setSprintInfo(
         sprintResult.sprintName || "",
@@ -388,26 +480,8 @@ export default function App() {
 
   if (initializing) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          background: "#0d1117",
-        }}
-      >
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            border: "3px solid #334155",
-            borderTop: "3px solid #6366f1",
-            borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
-          }}
-        />
-        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      <div className="flex justify-center items-center h-screen bg-[#0d1117]">
+        <div className="spinner" />
       </div>
     );
   }

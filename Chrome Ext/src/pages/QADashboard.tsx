@@ -12,6 +12,8 @@ import OverburntItems from "../components/QA/OverburntItems";
 import FlowImpact from "../components/QA/FlowImpact";
 import AIRecommendations from "../components/QA/AIRecommendations";
 import JiraExplorer from "../components/QA/JiraExplorer";
+import EarlyCompletions from "../components/QA/EarlyCompletions";
+import CodeIntelligence from "../components/QA/CodeIntelligence";
 import type { AuthMode, JiraUser } from "../types";
 import type { QueryTimeRange } from "../utils/queryTimeRange";
 
@@ -31,6 +33,8 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
   leakage: <BugLeakage />,
   overburnt: <OverburntItems />,
   flow: <FlowImpact />,
+  "early-completions": <EarlyCompletions />,
+  "code-intel": <CodeIntelligence />,
   ai: <AIRecommendations />,
   explorer: <JiraExplorer />,
 };

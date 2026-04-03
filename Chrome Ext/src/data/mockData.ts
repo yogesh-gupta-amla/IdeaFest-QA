@@ -115,6 +115,10 @@ const makeIssue = (
     reopenCount,
     assigneeChanges,
     slaHours,
+    issueType: "Bug",
+    workratio:
+      timeEstimate > 0 ? Math.round((timeLogged / timeEstimate) * 100) : 0,
+    worklogs: [],
   };
 };
 

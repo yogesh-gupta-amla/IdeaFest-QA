@@ -8,12 +8,24 @@ import type {
   TopStory,
   BugLeakageItem,
   OverburntItem,
+  OverburntItemDetail,
+  OverburntAnalysis,
+  OverburntSeverity,
   FlowImpactItem,
   AIRecommendation,
   TrendPoint,
   SeverityBucket,
   DashboardFilters,
   RiskLevel,
+  EarlyCompletionItem,
+  EarlyCompletionAnalysis,
+  CodeIntelIssue,
+  CodeIntelAnalysis,
+  ReusableComponent,
+  RecentImplementation,
+  DuplicateDetection,
+  DeveloperInsight,
+  CodeIntelRecommendation,
 } from "../types/qa";
 import type { QueryTimeRange } from "./queryTimeRange";
 
@@ -508,13 +520,35 @@ export const calculateBugLeakage = (issues: QAIssue[]): BugLeakageItem[] => {
 
 // ─── 5. Overburnt Items ──────────────────────────────────────────────────────
 
+function classifySeverity(pct: number): OverburntSeverity {
+  if (pct > 160) return "Critical";
+  if (pct > 130) return "High";
+  return "Moderate";
+}
+
+function inferOverburnReason(issue: QAIssue, contributorCount: number): string {
+  const reasons: string[] = [];
+  if (issue.reopenCount > 0) reasons.push("rework/reopened cycles");
+  if (issue.assigneeChanges > 1) reasons.push("multiple handoffs");
+  if (contributorCount > 2) reasons.push("too many contributors");
+  if (issue.statusChanges.length > 6)
+    reasons.push("excessive status transitions");
+  if (issue.commentsCount > 10)
+    reasons.push("unclear requirements (high discussion)");
+  if (issue.timeEstimate > 0 && issue.timeLogged > issue.timeEstimate * 2)
+    reasons.push("severe underestimation");
+  else if (issue.timeEstimate > 0 && issue.timeLogged > issue.timeEstimate)
+    reasons.push("underestimation");
+  if (reasons.length === 0) reasons.push("general inefficiency or scope creep");
+  return reasons.join(", ");
+}
+
+/** Legacy wrapper for backward compatibility */
 export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
   const results: OverburntItem[] = [];
-
   issues.forEach((issue) => {
     const reasons: string[] = [];
     let score = 0;
-
     if (issue.timeLogged > issue.timeEstimate && issue.timeEstimate > 0) {
       reasons.push(
         `Time logged (${issue.timeLogged}h) > estimate (${issue.timeEstimate}h)`,
@@ -522,9 +556,7 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       score += 30;
     }
     if (issue.statusChanges.length > 5) {
-      reasons.push(
-        `${issue.statusChanges.length} status changes (threshold: 5)`,
-      );
+      reasons.push(`${issue.statusChanges.length} status changes`);
       score += 20;
     }
     if (issue.reopenCount > 0) {
@@ -532,14 +564,13 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       score += issue.reopenCount * 15;
     }
     if (issue.commentsCount > 10) {
-      reasons.push(`${issue.commentsCount} comments (threshold: 10)`);
+      reasons.push(`${issue.commentsCount} comments`);
       score += 10;
     }
     if (issue.assigneeChanges > 0) {
       reasons.push(`Assignee changed ${issue.assigneeChanges} time(s)`);
       score += issue.assigneeChanges * 10;
     }
-
     if (reasons.length > 0) {
       results.push({
         issue,
@@ -549,8 +580,309 @@ export const calculateOverburntItems = (issues: QAIssue[]): OverburntItem[] => {
       });
     }
   });
-
   return results.sort((a, b) => b.overburntScore - a.overburntScore);
+};
+
+/** Full overburn analysis matching the AI Analyst prompt schema */
+export const calculateOverburntAnalysis = (
+  issues: QAIssue[],
+): OverburntAnalysis => {
+  // Build detailed items
+  const items: OverburntItemDetail[] = issues
+    .map((issue) => {
+      const est = issue.timeEstimate;
+      const spent = issue.timeLogged;
+      const wr =
+        issue.workratio > 0
+          ? issue.workratio
+          : est > 0
+            ? Math.round((spent / est) * 100)
+            : 100;
+      const overburnPct = wr;
+      const severity = classifySeverity(overburnPct);
+
+      // Build contributor map from worklogs
+      const contribMap = new Map<string, number>();
+      for (const wl of issue.worklogs) {
+        contribMap.set(
+          wl.author,
+          (contribMap.get(wl.author) || 0) + wl.timeSpentHours,
+        );
+      }
+      // If no worklogs, use assignee with total time spent
+      if (contribMap.size === 0 && spent > 0) {
+        contribMap.set(issue.assignee, spent);
+      }
+
+      const allContributors = Array.from(contribMap.entries())
+        .map(([name, timeLogged]) => ({
+          name,
+          timeLogged: Math.round(timeLogged * 100) / 100,
+        }))
+        .sort((a, b) => b.timeLogged - a.timeLogged);
+
+      const totalContribTime = allContributors.reduce(
+        (s, c) => s + c.timeLogged,
+        0,
+      );
+
+      const topContrib = allContributors[0] || null;
+      const topOverburnContributor = topContrib
+        ? {
+            name: topContrib.name,
+            timeLogged: topContrib.timeLogged,
+            isAssignee: topContrib.name === issue.assignee,
+            contributionPercentage:
+              totalContribTime > 0
+                ? Math.round((topContrib.timeLogged / totalContribTime) * 100)
+                : 100,
+          }
+        : null;
+
+      const reason = inferOverburnReason(issue, allContributors.length);
+
+      // Generate actionable fix
+      let actionableFix = "Review estimation accuracy for this type of work";
+      if (issue.reopenCount > 0)
+        actionableFix =
+          "Improve QA-dev handoff process to reduce rework cycles";
+      else if (allContributors.length > 2)
+        actionableFix =
+          "Assign single owner to reduce context-switching overhead";
+      else if (issue.assigneeChanges > 1)
+        actionableFix = "Stabilize task ownership early in the sprint";
+      else if (overburnPct > 160)
+        actionableFix =
+          "Split similar future tasks into smaller estimable units";
+
+      const excessHours = Math.max(0, spent - est);
+      const expectedImprovement =
+        excessHours > 0
+          ? `Save ~${excessHours}h by addressing ${reason.split(",")[0]}`
+          : "Reduce overburn risk through better estimation";
+
+      return {
+        issue,
+        originalEstimate: est,
+        timeSpent: spent,
+        workratio: wr,
+        overburnPercentage: overburnPct,
+        severity,
+        topOverburnContributor,
+        allContributors,
+        overburnReason: reason,
+        actionableFix,
+        expectedImprovement,
+      };
+    })
+    .sort((a, b) => b.overburnPercentage - a.overburnPercentage);
+
+  const moderate = items.filter((i) => i.severity === "Moderate").length;
+  const high = items.filter((i) => i.severity === "High").length;
+  const critical = items.filter((i) => i.severity === "Critical").length;
+
+  // Cross-issue contributor analysis
+  const globalContribMap = new Map<
+    string,
+    { totalExtra: number; issues: Set<string> }
+  >();
+  for (const item of items) {
+    const excessHours = Math.max(0, item.timeSpent - item.originalEstimate);
+    for (const c of item.allContributors) {
+      const entry = globalContribMap.get(c.name) || {
+        totalExtra: 0,
+        issues: new Set<string>(),
+      };
+      // Proportional excess attribution
+      const totalContribTime = item.allContributors.reduce(
+        (s, x) => s + x.timeLogged,
+        0,
+      );
+      const proportion =
+        totalContribTime > 0 ? c.timeLogged / totalContribTime : 0;
+      entry.totalExtra += excessHours * proportion;
+      entry.issues.add(item.issue.key);
+      globalContribMap.set(c.name, entry);
+    }
+  }
+  const topOverburnContributors = Array.from(globalContribMap.entries())
+    .map(([name, data]) => ({
+      name,
+      totalExtraTimeLogged: Math.round(data.totalExtra * 10) / 10,
+      issuesInvolved: data.issues.size,
+      risk:
+        data.issues.size >= 3
+          ? "Repeatedly contributing to overburn — systemic issue"
+          : "Isolated overburn",
+      recommendation:
+        data.issues.size >= 3
+          ? `Review workload balance for ${name}; consider pairing or splitting tasks`
+          : `Monitor ${name}'s upcoming tasks for estimation accuracy`,
+    }))
+    .filter((c) => c.totalExtraTimeLogged > 0)
+    .sort((a, b) => b.totalExtraTimeLogged - a.totalExtraTimeLogged)
+    .slice(0, 10);
+
+  // Assignee vs actual contributor mismatch
+  const assigneeMismatches = items
+    .filter(
+      (i) => i.topOverburnContributor && !i.topOverburnContributor.isAssignee,
+    )
+    .map((i) => ({
+      issueId: i.issue.key,
+      assignee: i.issue.assignee,
+      actualTopContributor: i.topOverburnContributor!.name,
+      insight: `${i.topOverburnContributor!.name} logged ${i.topOverburnContributor!.contributionPercentage}% of effort but is not the assignee — indicates task delegation or rework by others`,
+    }));
+
+  // Issue type analysis
+  const typeMap = new Map<string, number[]>();
+  for (const item of items) {
+    const t = item.issue.issueType || "Unknown";
+    const arr = typeMap.get(t) || [];
+    arr.push(item.overburnPercentage);
+    typeMap.set(t, arr);
+  }
+  const highRiskIssueTypes = Array.from(typeMap.entries())
+    .map(([issuetype, pcts]) => ({
+      issuetype,
+      avgOverburn: Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length),
+      count: pcts.length,
+    }))
+    .filter((t) => t.avgOverburn > 130 || t.count >= 3)
+    .sort((a, b) => b.avgOverburn - a.avgOverburn)
+    .map((t) => ({
+      issuetype: t.issuetype,
+      reason: `${t.count} issues with avg ${t.avgOverburn}% overburn — high estimation risk`,
+    }));
+
+  // Priority analysis
+  const prioMap = new Map<string, number[]>();
+  for (const item of items) {
+    const p = item.issue.priority;
+    const arr = prioMap.get(p) || [];
+    arr.push(item.overburnPercentage);
+    prioMap.set(p, arr);
+  }
+  const priorityBasedOverburn = Array.from(prioMap.entries()).map(
+    ([priority, pcts]) => ({
+      priority,
+      observation: `${pcts.length} overburnt issues (avg ${Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length)}%) — ${pcts.length > 2 ? "pattern suggests priority-level estimation gap" : "isolated cases"}`,
+    }),
+  );
+
+  // Cycle time flags — issues with excessive status transitions or long resolution
+  const cycleTimeFlags = items
+    .filter(
+      (i) => i.issue.statusChanges.length > 6 || i.overburnPercentage > 160,
+    )
+    .map((i) => ({
+      issueId: i.issue.key,
+      delayReason:
+        i.issue.statusChanges.length > 6
+          ? `${i.issue.statusChanges.length} status transitions indicate ping-pong or unclear workflow`
+          : `${i.overburnPercentage}% overburn suggests scope creep or blocked progress`,
+    }))
+    .slice(0, 10);
+
+  // Resource optimization
+  const resourceTimeMap = new Map<string, number>();
+  for (const item of items) {
+    for (const c of item.allContributors) {
+      resourceTimeMap.set(
+        c.name,
+        (resourceTimeMap.get(c.name) || 0) + c.timeLogged,
+      );
+    }
+  }
+  const allResourceTimes = Array.from(resourceTimeMap.entries()).sort(
+    (a, b) => b[1] - a[1],
+  );
+  const avgTime =
+    allResourceTimes.length > 0
+      ? allResourceTimes.reduce((s, [, t]) => s + t, 0) /
+        allResourceTimes.length
+      : 0;
+
+  const overutilized = allResourceTimes
+    .filter(([, t]) => t > avgTime * 1.5)
+    .map(([name, totalLoggedTime]) => ({
+      name,
+      totalLoggedTime: Math.round(totalLoggedTime * 10) / 10,
+      risk: "Burnout risk — significantly above average workload",
+      recommendation: `Redistribute ${Math.round(totalLoggedTime - avgTime)}h of overburnt tasks from ${name}`,
+    }));
+
+  const underutilized = allResourceTimes
+    .filter(([, t]) => t < avgTime * 0.5 && avgTime > 0)
+    .map(([name, t]) => ({
+      name,
+      utilizationGap: `${Math.round(((avgTime - t) / avgTime) * 100)}% below team average`,
+      recommendation: `Assign more overburnt/at-risk items to ${name} to balance team load`,
+    }));
+
+  // Executive summary
+  const totalExcess = items.reduce(
+    (s, i) => s + Math.max(0, i.timeSpent - i.originalEstimate),
+    0,
+  );
+  const executiveSummary =
+    items.length === 0
+      ? "No overburnt issues found in the selected time range. Team is tracking well on estimates."
+      : `${items.length} overburnt issues detected with ${Math.round(totalExcess)}h total excess time. ${critical} critical, ${high} high, ${moderate} moderate severity. ${assigneeMismatches.length > 0 ? `${assigneeMismatches.length} assignee-contributor mismatch(es) found.` : "No assignee mismatches."} ${topOverburnContributors.length > 0 ? `Top overburn contributor: ${topOverburnContributors[0].name} (${topOverburnContributors[0].totalExtraTimeLogged}h excess across ${topOverburnContributors[0].issuesInvolved} issues).` : ""}`;
+
+  // AI recommendation
+  let headline = "Improve estimation accuracy to reduce overburn";
+  let keyDriver = "underestimation";
+  let expectedImpact = `Reduce ~${Math.round(totalExcess * 0.3)}h of excess logged time`;
+  let confidence: "High" | "Medium" | "Low" = "Medium";
+
+  const reopenItems = items.filter((i) => i.issue.reopenCount > 0);
+  const handoffItems = items.filter((i) => i.issue.assigneeChanges > 1);
+
+  if (reopenItems.length > items.length * 0.3) {
+    headline = `Reduce rework cycles to cut overburn by ~${Math.round((reopenItems.length / items.length) * 25)}%`;
+    keyDriver = "excessive rework/reopen cycles";
+    expectedImpact = `Eliminate ~${Math.round(totalExcess * 0.4)}h of rework-driven excess`;
+    confidence = "High";
+  } else if (assigneeMismatches.length > items.length * 0.2) {
+    headline = `Fix assignee-contributor alignment to save ~${Math.round(totalExcess * 0.25)}h`;
+    keyDriver = "task delegation without ownership transfer";
+    expectedImpact = `Reduce context-switching overhead across ${assigneeMismatches.length} issues`;
+    confidence = "Medium";
+  } else if (handoffItems.length > items.length * 0.2) {
+    headline = `Stabilize task ownership to reduce multi-handoff overburn by ~${Math.round((handoffItems.length / items.length) * 20)}%`;
+    keyDriver = "multiple assignee handoffs";
+    expectedImpact = `Save ~${Math.round(totalExcess * 0.3)}h by reducing handoff overhead`;
+    confidence = "High";
+  } else if (critical > 0) {
+    headline = `Address ${critical} critically overburnt items to recover ~${Math.round(totalExcess * 0.5)}h`;
+    keyDriver = "critical overburn concentration";
+    expectedImpact = `Immediate recovery of ${Math.round(totalExcess * 0.5)}h through targeted fixes`;
+    confidence = "High";
+  }
+
+  return {
+    executiveSummary,
+    overburnInsights: {
+      totalItems: items.length,
+      moderateOverburn: moderate,
+      highOverburn: high,
+      criticalOverburn: critical,
+    },
+    items,
+    crossIssueAnalysis: {
+      topOverburnContributors,
+      assigneeVsActualMismatch: assigneeMismatches,
+    },
+    additionalInsights: {
+      highRiskIssueTypes,
+      priorityBasedOverburn,
+      cycleTimeFlags,
+    },
+    resourceOptimization: { overutilized, underutilized },
+    aiRecommendation: { headline, keyDriver, expectedImpact, confidence },
+  };
 };
 
 // ─── 6. Flow Impact ──────────────────────────────────────────────────────────
@@ -704,3 +1036,438 @@ export const generateAIRecommendations = (
 
   return recommendations.slice(0, 3);
 };
+
+// ─── 8. Early Completions ───────────────────────────────────────────────────
+
+export const calculateEarlyCompletions = (
+  issues: QAIssue[],
+): EarlyCompletionAnalysis => {
+  // Only Done issues with both originalEstimate and resolved date
+  const doneIssues = issues.filter(
+    (i) =>
+      i.originalStatus?.toLowerCase() === "done" ||
+      i.status === "Resolved" ||
+      i.status === "Closed",
+  );
+
+  const withEstimate = doneIssues.filter(
+    (i) => i.timeEstimate > 0 && i.resolved,
+  );
+
+  const earlyItems: EarlyCompletionItem[] = [];
+
+  for (const issue of withEstimate) {
+    const createdMs = new Date(issue.created).getTime();
+    const resolvedMs = new Date(issue.resolved!).getTime();
+    if (resolvedMs <= createdMs) continue; // skip invalid
+
+    const timeTakenHours =
+      Math.round(((resolvedMs - createdMs) / (1000 * 60 * 60)) * 100) / 100;
+    const originalEstimateHours =
+      Math.round((issue.timeEstimate / 3600) * 100) / 100;
+
+    if (timeTakenHours < originalEstimateHours) {
+      earlyItems.push({
+        issue,
+        createdDate: issue.created,
+        resolutionDate: issue.resolved!,
+        originalEstimateHours,
+        timeTakenHours,
+        timeSavedHours:
+          Math.round((originalEstimateHours - timeTakenHours) * 100) / 100,
+      });
+    }
+  }
+
+  // Sort by time saved descending
+  earlyItems.sort((a, b) => b.timeSavedHours - a.timeSavedHours);
+
+  const totalEarlyItems = earlyItems.length;
+  const totalDoneItems = withEstimate.length;
+  const avgTimeSavedHours =
+    totalEarlyItems > 0
+      ? Math.round(
+          (earlyItems.reduce((s, i) => s + i.timeSavedHours, 0) /
+            totalEarlyItems) *
+            100,
+        ) / 100
+      : 0;
+  const earlyCompletionPercentage =
+    totalDoneItems > 0
+      ? Math.round((totalEarlyItems / totalDoneItems) * 10000) / 100
+      : 0;
+
+  return {
+    items: earlyItems,
+    totalEarlyItems,
+    totalDoneItems,
+    avgTimeSavedHours,
+    earlyCompletionPercentage,
+  };
+};
+
+// ── Code Intelligence Analysis ──────────────────────────────────────────────
+export const calculateCodeIntelligence = (
+  issues: CodeIntelIssue[],
+): CodeIntelAnalysis => {
+  const totalCommits = issues.reduce((s, i) => s + i.commits.length, 0);
+  const totalPRs = issues.reduce((s, i) => s + i.pullRequests.length, 0);
+  const hasDevInfo = totalCommits > 0 || totalPRs > 0;
+
+  // ── 1. Keyword extraction from summaries, descriptions, labels, components ──
+  const keywordMap = new Map<string, Set<string>>();
+  const fileMap = new Map<string, Set<string>>();
+  const devCommitMap = new Map<
+    string,
+    { commits: string[]; issues: Set<string>; files: Set<string> }
+  >();
+
+  for (const issue of issues) {
+    const tokens = extractKeywords(issue);
+    for (const token of tokens) {
+      if (!keywordMap.has(token)) keywordMap.set(token, new Set());
+      keywordMap.get(token)!.add(issue.issueKey);
+    }
+    for (const c of issue.commits) {
+      for (const f of c.files) {
+        const dir = f.split("/").slice(0, -1).join("/") || f;
+        if (!fileMap.has(dir)) fileMap.set(dir, new Set());
+        fileMap.get(dir)!.add(issue.issueKey);
+      }
+      const dev = c.author || issue.assignee;
+      if (!devCommitMap.has(dev))
+        devCommitMap.set(dev, {
+          commits: [],
+          issues: new Set(),
+          files: new Set(),
+        });
+      const d = devCommitMap.get(dev)!;
+      d.commits.push(c.id);
+      d.issues.add(issue.issueKey);
+      c.files.forEach((f) => d.files.add(f));
+    }
+    // Also count assignees even without commits
+    if (issue.commits.length === 0) {
+      const dev = issue.assignee;
+      if (dev && dev !== "Unassigned") {
+        if (!devCommitMap.has(dev))
+          devCommitMap.set(dev, {
+            commits: [],
+            issues: new Set(),
+            files: new Set(),
+          });
+        devCommitMap.get(dev)!.issues.add(issue.issueKey);
+      }
+    }
+  }
+
+  // ── 2. Reusable components (keywords/files shared across 2+ issues) ──
+  const reusableComponents: ReusableComponent[] = [];
+
+  // From file overlap
+  for (const [dir, issueKeys] of fileMap) {
+    if (issueKeys.size >= 2) {
+      const relIssues = Array.from(issueKeys);
+      const commits = issues
+        .filter((i) => issueKeys.has(i.issueKey))
+        .flatMap((i) => i.commits)
+        .filter((c) => c.files.some((f) => f.startsWith(dir)))
+        .slice(0, 5);
+      reusableComponents.push({
+        componentName: dir.split("/").pop() || dir,
+        description: `Shared code path: ${dir} — modified across ${issueKeys.size} issues`,
+        relatedIssues: relIssues,
+        relevantCommits: commits.map((c) => ({
+          commitId: c.id,
+          url: c.url,
+          summary: c.message.substring(0, 80),
+        })),
+        reusabilityScore:
+          issueKeys.size >= 4 ? "High" : issueKeys.size >= 3 ? "Medium" : "Low",
+        recommendedUsage: `Extract reusable logic from ${dir} into a shared module/service`,
+      });
+    }
+  }
+
+  // From keyword overlap
+  const processedKeywords = new Set<string>();
+  for (const [keyword, issueKeys] of keywordMap) {
+    if (issueKeys.size >= 3 && !processedKeywords.has(keyword)) {
+      processedKeywords.add(keyword);
+      const relIssues = Array.from(issueKeys);
+      const commits = issues
+        .filter((i) => issueKeys.has(i.issueKey))
+        .flatMap((i) => i.commits)
+        .slice(0, 3);
+      reusableComponents.push({
+        componentName: keyword,
+        description: `Functionality area "${keyword}" appears in ${issueKeys.size} issues — potential shared service`,
+        relatedIssues: relIssues,
+        relevantCommits: commits.map((c) => ({
+          commitId: c.id,
+          url: c.url,
+          summary: c.message.substring(0, 80),
+        })),
+        reusabilityScore: issueKeys.size >= 5 ? "High" : "Medium",
+        recommendedUsage: `Consolidate "${keyword}" implementations into a reusable module`,
+      });
+    }
+  }
+  reusableComponents.sort(
+    (a, b) =>
+      (b.reusabilityScore === "High"
+        ? 3
+        : b.reusabilityScore === "Medium"
+          ? 2
+          : 1) -
+      (a.reusabilityScore === "High"
+        ? 3
+        : a.reusabilityScore === "Medium"
+          ? 2
+          : 1),
+  );
+
+  // ── 3. Recent implementations ──
+  const recentImplementations: RecentImplementation[] = [];
+  for (const issue of issues.slice(0, 20)) {
+    if (issue.commits.length > 0) {
+      const latestCommit = issue.commits[0];
+      recentImplementations.push({
+        featureArea:
+          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        issueId: issue.issueKey,
+        commitId: latestCommit.id,
+        url: latestCommit.url,
+        description: issue.summary,
+        filesImpacted: [
+          ...new Set(issue.commits.flatMap((c) => c.files)),
+        ].slice(0, 10),
+      });
+    } else {
+      recentImplementations.push({
+        featureArea:
+          issue.components[0] || issue.labels[0] || inferArea(issue.summary),
+        issueId: issue.issueKey,
+        commitId: "",
+        url: "",
+        description: issue.summary,
+        filesImpacted: [],
+      });
+    }
+  }
+
+  // ── 4. Duplicate / overlap detection ──
+  const duplicateDetection: DuplicateDetection[] = [];
+  const issuesBySummary = new Map<string, string[]>();
+  for (const issue of issues) {
+    const normalized = issue.summary
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .split(" ")
+      .filter((w) => w.length > 3)
+      .sort()
+      .join(" ");
+    const key = normalized.substring(0, 60);
+    if (!issuesBySummary.has(key)) issuesBySummary.set(key, []);
+    issuesBySummary.get(key)!.push(issue.issueKey);
+  }
+  for (const [, keys] of issuesBySummary) {
+    if (keys.length >= 2) {
+      duplicateDetection.push({
+        issueIds: keys,
+        similarityReason: "Similar summary text and likely duplicate work",
+        risk:
+          keys.length >= 3
+            ? "High — significant wasted effort"
+            : "Medium — potential redundancy",
+        recommendation: `Review ${keys.join(", ")} for consolidation or deduplication`,
+      });
+    }
+  }
+  // Component-based overlap
+  const componentIssues = new Map<string, string[]>();
+  for (const issue of issues) {
+    for (const comp of issue.components) {
+      if (!componentIssues.has(comp)) componentIssues.set(comp, []);
+      componentIssues.get(comp)!.push(issue.issueKey);
+    }
+  }
+  for (const [comp, keys] of componentIssues) {
+    if (keys.length >= 5) {
+      duplicateDetection.push({
+        issueIds: keys.slice(0, 5),
+        similarityReason: `${keys.length} issues touch component "${comp}" — possible architectural issue`,
+        risk: "Medium — high concentration suggests shared root cause",
+        recommendation: `Investigate "${comp}" for shared defects or design improvements`,
+      });
+    }
+  }
+
+  // ── 5. Developer insights ──
+  const developerInsights: DeveloperInsight[] = [];
+  for (const [dev, info] of devCommitMap) {
+    if (dev === "Unassigned") continue;
+    const areas = new Set<string>();
+    for (const f of info.files) {
+      const parts = f.split("/");
+      if (parts.length >= 2) areas.add(parts.slice(0, 2).join("/"));
+    }
+    // Also add components from their issues
+    for (const issueKey of info.issues) {
+      const iss = issues.find((i) => i.issueKey === issueKey);
+      if (iss) iss.components.forEach((c) => areas.add(c));
+    }
+    developerInsights.push({
+      developer: dev,
+      expertiseArea: Array.from(areas).slice(0, 3).join(", ") || "General",
+      notableCommits: info.commits.slice(0, 5),
+      recommendation:
+        info.issues.size >= 5
+          ? `${dev} is a key contributor (${info.issues.size} issues). Ensure knowledge sharing to reduce bus factor.`
+          : `${dev} contributed to ${info.issues.size} issue(s). Consider pairing for skill growth.`,
+    });
+  }
+  developerInsights.sort(
+    (a, b) => b.notableCommits.length - a.notableCommits.length,
+  );
+
+  // ── 6. AI recommendations ──
+  const aiRecommendations: CodeIntelRecommendation[] = [];
+  if (reusableComponents.length > 0) {
+    const top = reusableComponents[0];
+    aiRecommendations.push({
+      headline: `Consolidate "${top.componentName}" to reduce dev effort by ~${Math.min(30, top.relatedIssues.length * 8)}%`,
+      component: top.componentName,
+      action: top.recommendedUsage,
+      expectedBenefit: `Eliminates redundancy across ${top.relatedIssues.length} issues`,
+    });
+  }
+  if (duplicateDetection.length > 0) {
+    aiRecommendations.push({
+      headline: `${duplicateDetection.length} potential duplicate/overlap clusters detected`,
+      component: "Cross-cutting",
+      action: "Review flagged issue clusters for consolidation",
+      expectedBenefit: "Reduce wasted effort and improve delivery speed",
+    });
+  }
+  if (developerInsights.length > 0) {
+    const topDev = developerInsights[0];
+    aiRecommendations.push({
+      headline: `Distribute knowledge from ${topDev.developer} — single-point-of-failure risk`,
+      component: topDev.expertiseArea,
+      action: "Schedule pair programming or knowledge sharing sessions",
+      expectedBenefit: "Reduce bus factor and improve team resilience",
+    });
+  }
+  if (!hasDevInfo) {
+    aiRecommendations.push({
+      headline: "Enable GitHub integration for richer commit analysis",
+      component: "DevOps",
+      action:
+        "Link GitHub repositories to Jira via Development panel or Jira app",
+      expectedBenefit:
+        "Unlock file-level reusability analysis and commit tracking",
+    });
+  }
+
+  // ── Executive summary ──
+  const summaryParts: string[] = [];
+  summaryParts.push(
+    `Analyzed ${issues.length} recently resolved issues with ${totalCommits} linked commits and ${totalPRs} PRs.`,
+  );
+  if (reusableComponents.length > 0)
+    summaryParts.push(
+      `Found ${reusableComponents.length} potential reusable components/modules.`,
+    );
+  if (duplicateDetection.length > 0)
+    summaryParts.push(
+      `Detected ${duplicateDetection.length} overlap/duplication clusters requiring review.`,
+    );
+  if (!hasDevInfo)
+    summaryParts.push(
+      "No GitHub commit data available — analysis based on Jira metadata only.",
+    );
+
+  return {
+    executiveSummary: summaryParts.join(" "),
+    reusableComponents: reusableComponents.slice(0, 15),
+    recentImplementations: recentImplementations.slice(0, 20),
+    duplicateDetection: duplicateDetection.slice(0, 10),
+    aiRecommendations,
+    developerInsights: developerInsights.slice(0, 15),
+    totalIssuesAnalyzed: issues.length,
+    totalCommits,
+    totalPRs,
+    hasDevInfo,
+  };
+};
+
+function extractKeywords(issue: CodeIntelIssue): string[] {
+  const text = `${issue.summary} ${issue.description}`.toLowerCase();
+  const words = text
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 4);
+  const stopWords = new Set([
+    "should",
+    "would",
+    "could",
+    "about",
+    "their",
+    "there",
+    "which",
+    "where",
+    "being",
+    "after",
+    "before",
+    "while",
+    "these",
+    "those",
+    "other",
+    "shall",
+    "issue",
+    "please",
+    "update",
+    "added",
+    "fixed",
+  ]);
+  const keywords = [
+    ...words.filter((w) => !stopWords.has(w)),
+    ...issue.labels.map((l) => l.toLowerCase()),
+    ...issue.components.map((c) => c.toLowerCase()),
+  ];
+  return [...new Set(keywords)];
+}
+
+function inferArea(summary: string): string {
+  const lower = summary.toLowerCase();
+  const areas = [
+    "auth",
+    "login",
+    "search",
+    "payment",
+    "checkout",
+    "api",
+    "database",
+    "ui",
+    "frontend",
+    "backend",
+    "notification",
+    "email",
+    "report",
+    "dashboard",
+    "admin",
+    "user",
+    "config",
+    "setting",
+    "upload",
+    "import",
+    "export",
+    "integration",
+    "sync",
+    "cache",
+    "performance",
+    "security",
+  ];
+  return areas.find((a) => lower.includes(a)) || "General";
+}

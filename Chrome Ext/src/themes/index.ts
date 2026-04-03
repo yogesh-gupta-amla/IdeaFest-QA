@@ -278,6 +278,32 @@ export const applyTheme = (themeConfig: ThemeConfig) => {
   Object.entries(themeConfig.cssVars).forEach(([key, value]) => {
     root.style.setProperty(key, value);
   });
+  // Bridge QA theme vars → standard CSS vars used by AI cards & components
+  root.style.setProperty(
+    "--text-heading",
+    themeConfig.cssVars["--qa-text-primary"],
+  );
+  root.style.setProperty("--text", themeConfig.cssVars["--qa-text-secondary"]);
+  root.style.setProperty(
+    "--text-muted",
+    themeConfig.cssVars["--qa-text-muted"],
+  );
+  root.style.setProperty("--bg", themeConfig.cssVars["--qa-bg-primary"]);
+  root.style.setProperty("--accent", themeConfig.cssVars["--qa-accent"]);
+  root.style.setProperty(
+    "--accent-secondary",
+    themeConfig.cssVars["--qa-accent-hover"],
+  );
+  root.style.setProperty("--border", themeConfig.cssVars["--qa-border"]);
+  root.style.setProperty("--card-shadow", themeConfig.cssVars["--qa-shadow"]);
+  root.style.setProperty(
+    "--surface",
+    themeConfig.isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
+  );
+  root.style.setProperty(
+    "--surface-hover",
+    themeConfig.isDark ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.09)",
+  );
 };
 
 export const getThemeById = (id: string): ThemeConfig =>

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DashboardFilters, Priority } from "../types/qa";
+import type { DashboardFilters, Priority, CodeIntelIssue } from "../types/qa";
 import type { Metrics, SnapshotMetrics, AuthMode, JiraIssue } from "../types";
 import { QA_THEMES, applyTheme } from "../themes";
 import type { QueryTimeRange } from "../utils/queryTimeRange";
@@ -21,10 +21,16 @@ interface DashboardStore {
   rawIssues: JiraIssue[];
   recentlyResolved: JiraIssue[];
   ageingIssues: JiraIssue[];
+  overburntIssues: JiraIssue[];
+  earlyCompletionIssues: JiraIssue[];
+  codeIntelIssues: CodeIntelIssue[];
   projectDataLoaded: boolean;
   setRawIssues: (issues: JiraIssue[]) => void;
   setRecentlyResolved: (issues: JiraIssue[]) => void;
   setAgeingIssues: (issues: JiraIssue[]) => void;
+  setOverburntIssues: (issues: JiraIssue[]) => void;
+  setEarlyCompletionIssues: (issues: JiraIssue[]) => void;
+  setCodeIntelIssues: (issues: CodeIntelIssue[]) => void;
   setQueryTimeRange: (timeRange: QueryTimeRange) => void;
   setProjectDataLoaded: (loaded: boolean) => void;
   setTheme: (id: string) => void;
@@ -66,10 +72,16 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   rawIssues: [],
   recentlyResolved: [],
   ageingIssues: [],
+  overburntIssues: [],
+  earlyCompletionIssues: [],
+  codeIntelIssues: [],
   projectDataLoaded: false,
   setRawIssues: (issues) => set({ rawIssues: issues }),
   setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
   setAgeingIssues: (issues) => set({ ageingIssues: issues }),
+  setOverburntIssues: (issues) => set({ overburntIssues: issues }),
+  setEarlyCompletionIssues: (issues) => set({ earlyCompletionIssues: issues }),
+  setCodeIntelIssues: (issues) => set({ codeIntelIssues: issues }),
   setQueryTimeRange: (queryTimeRange) => set({ queryTimeRange }),
   setProjectDataLoaded: (projectDataLoaded) => set({ projectDataLoaded }),
 

@@ -881,15 +881,6 @@ const AIRecommendations: React.FC = () => {
       </div>
     );
   }
-
-<<<<<<< HEAD
-  if (error) {
-    const errMsg = typeof error === "string" ? error : (error && (error as any).message) || String(error);
-    return <Alert type="error" message="Failed to generate AI analysis" description={errMsg} />;
-  }
-
-=======
->>>>>>> 391d805795128e1f658368265e082735c34f0620
   if (!analysis) {
     return (
       <div
@@ -1240,7 +1231,7 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.immediateActions.length}
         />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {analysis.aiInsightsPanel.immediateActions.map((a, i) => (
+          {analysis.aiInsightsPanel.immediateActions.map((a: AIImmediateAction, i: number) => (
             <ActionCard key={a.issue} action={a} delay={i * 70} />
           ))}
         </div>
@@ -1255,7 +1246,7 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.risksAndPredictions.length}
         />
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          {analysis.aiInsightsPanel.risksAndPredictions.map((r, i) => (
+          {analysis.aiInsightsPanel.risksAndPredictions.map((r: AIRiskPrediction, i: number) => (
             <RiskCard key={r.risk} risk={r} delay={i * 80} />
           ))}
         </div>
@@ -1275,7 +1266,7 @@ const AIRecommendations: React.FC = () => {
             delay={60}
             emptyText="No owner materially above team-average load."
             items={analysis.aiInsightsPanel.resourceSuggestions.overutilizedResources.map(
-              (r) => ({
+              (r: any) => ({
                 name: r.name,
                 utilizationPercentage: r.utilizationPercentage,
                 summary: r.risk,
@@ -1289,7 +1280,7 @@ const AIRecommendations: React.FC = () => {
             delay={120}
             emptyText="No meaningful spare capacity signal detected."
             items={analysis.aiInsightsPanel.resourceSuggestions.underutilizedResources.map(
-              (r) => ({
+              (r: any) => ({
                 name: r.name,
                 utilizationPercentage: r.utilizationPercentage,
                 summary: r.opportunity,
@@ -1309,7 +1300,7 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.optimizationTips.length}
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {analysis.aiInsightsPanel.optimizationTips.map((tip, i) => (
+          {analysis.aiInsightsPanel.optimizationTips.map((tip: AIOptimizationTip, i: number) => (
             <TipCard key={tip.area} tip={tip} index={i} />
           ))}
         </div>
@@ -1324,7 +1315,7 @@ const AIRecommendations: React.FC = () => {
             accent="#3a86ff"
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {analysis.resourceOptimizationRecommendations.map((item, i) => (
+            {analysis.resourceOptimizationRecommendations.map((item: any, i: number) => (
               <NeonCard
                 key={item.problem}
                 accent="#3a86ff"
@@ -1376,7 +1367,7 @@ const AIRecommendations: React.FC = () => {
           count={analysis.prioritizedFixes.length}
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {analysis.prioritizedFixes.map((fix, i) => (
+          {analysis.prioritizedFixes.map((fix: AIPrioritizedFix, i: number) => (
             <FixCard
               key={`${fix.priorityRank}-${fix.fix}`}
               fix={fix}

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Card, Table, Tag, Empty, Collapse, Tooltip } from "antd";
+import NeonCard from "../common/NeonCard";
 import {
   CodeOutlined,
   BranchesOutlined,
@@ -132,14 +133,7 @@ const CodeIntelligence: React.FC = () => {
       </div>
 
       {/* Executive Summary */}
-      <Card
-        size="small"
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 10,
-        }}
-      >
+      <NeonCard speed="slow" bodyStyle={{ padding: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
           <BulbOutlined
             style={{ color: "#f59e0b", fontSize: 18, marginTop: 2 }}
@@ -181,7 +175,7 @@ const CodeIntelligence: React.FC = () => {
             (labels, components, descriptions).
           </div>
         )}
-      </Card>
+      </NeonCard>
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -251,15 +245,11 @@ const SummaryCard: React.FC<{
   value: number;
   color: string;
 }> = ({ icon, label, value, color }) => (
-  <Card
-    size="small"
-    style={{
-      background: "var(--qa-bg-card)",
-      border: "1px solid var(--qa-border)",
-      borderRadius: 10,
-      textAlign: "center",
-    }}
-    bodyStyle={{ padding: "14px 10px" }}
+  <NeonCard
+    accent={color}
+    rainbow={false}
+    speed="slow"
+    bodyStyle={{ padding: "14px 10px", textAlign: "center" }}
   >
     <div style={{ fontSize: 22, color, marginBottom: 4 }}>{icon}</div>
     <div
@@ -270,7 +260,7 @@ const SummaryCard: React.FC<{
     <div style={{ fontSize: 11, color: "var(--qa-text-muted)", marginTop: 2 }}>
       {label}
     </div>
-  </Card>
+  </NeonCard>
 );
 
 // ── Reusable Components Tab ──────────────────────────────────────────────────
@@ -327,11 +317,20 @@ const ReusableComponentsTab: React.FC<{ items: ReusableComponent[] }> = ({
             <strong style={{ color: "var(--qa-text-primary)", fontSize: 12 }}>
               Related Issues:
             </strong>{" "}
-            {item.relatedIssues.map((k) => (
-              <Tag key={k} style={{ marginBottom: 4 }}>
-                {k}
-              </Tag>
-            ))}
+            <span
+              style={{
+                display: "inline-flex",
+                flexWrap: "wrap",
+                gap: 6,
+                verticalAlign: "middle",
+              }}
+            >
+              {item.relatedIssues.map((k) => (
+                <Tag key={k} style={{ marginBottom: 0 }}>
+                  {k}
+                </Tag>
+              ))}
+            </span>
           </div>
           {item.relevantCommits.length > 0 && (
             <div style={{ marginBottom: 8 }}>
@@ -484,14 +483,12 @@ const DuplicateDetectionTab: React.FC<{ items: DuplicateDetection[] }> = ({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {items.map((item, idx) => (
-        <Card
+        <NeonCard
           key={idx}
-          size="small"
-          style={{
-            background: "var(--qa-bg-card)",
-            border: "1px solid var(--qa-border)",
-            borderRadius: 10,
-          }}
+          accent="#f43f5e"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: 14 }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             <AlertOutlined
@@ -536,7 +533,7 @@ const DuplicateDetectionTab: React.FC<{ items: DuplicateDetection[] }> = ({
               </div>
             </div>
           </div>
-        </Card>
+        </NeonCard>
       ))}
     </div>
   );
@@ -625,14 +622,12 @@ const RecommendationsTab: React.FC<{ items: CodeIntelRecommendation[] }> = ({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {items.map((item, idx) => (
-        <Card
+        <NeonCard
           key={idx}
-          size="small"
-          style={{
-            background: "var(--qa-bg-card)",
-            border: "1px solid var(--qa-border)",
-            borderRadius: 10,
-          }}
+          accent="#f59e0b"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: 14 }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             <BulbOutlined
@@ -684,7 +679,7 @@ const RecommendationsTab: React.FC<{ items: CodeIntelRecommendation[] }> = ({
               </div>
             </div>
           </div>
-        </Card>
+        </NeonCard>
       ))}
     </div>
   );

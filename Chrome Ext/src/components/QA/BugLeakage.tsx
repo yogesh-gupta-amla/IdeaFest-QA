@@ -1,9 +1,10 @@
 import React from "react";
-import { Card, Table, Tag, Spin, Alert, Row, Col, Statistic } from "antd";
+import { Table, Tag, Spin, Alert, Row, Col, Statistic } from "antd";
 import { FileExcelOutlined } from "@ant-design/icons";
 import { Button } from "antd";
 import { useBugLeakage } from "../../hooks/useQAData";
 import { exportLeakageToExcel } from "../../utils/exportUtils";
+import NeonCard from "../common/NeonCard";
 import type { BugLeakageItem } from "../../types/qa";
 import type { ColumnsType } from "antd/es/table";
 
@@ -147,14 +148,11 @@ const BugLeakage: React.FC = () => {
           { label: "Non-Prod", value: byEnv("Non-Prod"), color: "#1677ff" },
         ].map((s) => (
           <Col key={s.label} xs={12} sm={8} md={24 / 5}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: `1px solid ${s.color}40`,
-                borderRadius: 10,
-                textAlign: "center",
-              }}
-              bodyStyle={{ padding: "16px 12px" }}
+            <NeonCard
+              accent={s.color}
+              rainbow={false}
+              speed="slow"
+              bodyStyle={{ padding: "16px 12px", textAlign: "center" }}
             >
               <Statistic
                 title={
@@ -165,7 +163,7 @@ const BugLeakage: React.FC = () => {
                 value={s.value}
                 valueStyle={{ fontSize: 24, fontWeight: 700, color: s.color }}
               />
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -181,12 +179,8 @@ const BugLeakage: React.FC = () => {
       )}
 
       {/* Table */}
-      <Card
-        title={
-          <span style={{ color: "var(--qa-text-primary)" }}>
-            Bug Leakage Issues
-          </span>
-        }
+      <NeonCard
+        title="Bug Leakage Issues"
         extra={
           <Button
             icon={<FileExcelOutlined />}
@@ -201,22 +195,19 @@ const BugLeakage: React.FC = () => {
             Export Excel
           </Button>
         }
-        style={{
-          background: "var(--qa-bg-card)",
-          border: "1px solid var(--qa-border)",
-          borderRadius: 12,
-        }}
-        styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+        speed="slow"
       >
-        <Table
-          columns={columns}
-          dataSource={items}
-          rowKey={(r) => r.issue.id}
-          size="small"
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 900 }}
-        />
-      </Card>
+        <div style={{ padding: "0 4px 4px" }}>
+          <Table
+            columns={columns}
+            dataSource={items}
+            rowKey={(r) => r.issue.id}
+            size="small"
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 900 }}
+          />
+        </div>
+      </NeonCard>
     </div>
   );
 };

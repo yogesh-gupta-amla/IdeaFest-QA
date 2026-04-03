@@ -1,8 +1,9 @@
 import React, { useRef } from "react";
-import { Card, Button, Tooltip } from "antd";
+import { Button, Tooltip } from "antd";
 import { DownloadOutlined, FilePdfOutlined } from "@ant-design/icons";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import NeonCard from "../common/NeonCard";
 
 interface ChartCardProps {
   title: string;
@@ -58,13 +59,8 @@ const ChartCard: React.FC<ChartCardProps> = ({
   };
 
   return (
-    <Card
-      id={id}
-      title={
-        <span style={{ color: "var(--qa-text-primary)", fontWeight: 600 }}>
-          {title}
-        </span>
-      }
+    <NeonCard
+      title={title}
       extra={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {extra}
@@ -94,18 +90,14 @@ const ChartCard: React.FC<ChartCardProps> = ({
           </Tooltip>
         </div>
       }
-      style={{
-        background: "var(--qa-bg-card)",
-        border: "1px solid var(--qa-border)",
-        borderRadius: 12,
-        ...style,
-      }}
-      styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+      style={style}
+      bodyStyle={{ padding: 16 }}
+      speed="slow"
     >
-      <div ref={ref} style={{ height }}>
+      <div id={id} ref={ref} style={{ height }}>
         {children}
       </div>
-    </Card>
+    </NeonCard>
   );
 };
 

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Table, Tag, Card, Statistic, Input, Select } from "antd";
+import { Table, Tag, Statistic, Input, Select } from "antd";
+import NeonCard from "../common/NeonCard";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -218,31 +219,51 @@ const EarlyCompletions: React.FC = () => {
           gap: 12,
         }}
       >
-        <Card size="small" style={{ borderLeft: "3px solid #52c41a" }}>
+        <NeonCard
+          accent="#52c41a"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Early Completions"
             value={data.totalEarlyItems}
             prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
             valueStyle={{ fontSize: 24, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #1890ff" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#1890ff"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Total Done (w/ Estimate)"
             value={data.totalDoneItems}
             prefix={<ClockCircleOutlined style={{ color: "#1890ff" }} />}
             valueStyle={{ fontSize: 24, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #722ed1" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#722ed1"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Avg Time Saved"
             value={formatHours(data.avgTimeSavedHours)}
             prefix={<TrophyOutlined style={{ color: "#722ed1" }} />}
             valueStyle={{ fontSize: 24, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #faad14" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#faad14"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Early Completion %"
             value={data.earlyCompletionPercentage}
@@ -250,15 +271,20 @@ const EarlyCompletions: React.FC = () => {
             prefix={<PercentageOutlined style={{ color: "#faad14" }} />}
             valueStyle={{ fontSize: 24, fontWeight: 700 }}
           />
-        </Card>
-        <Card size="small" style={{ borderLeft: "3px solid #13c2c2" }}>
+        </NeonCard>
+        <NeonCard
+          accent="#13c2c2"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Total Time Saved"
             value={formatHours(totalTimeSaved)}
             prefix={<ClockCircleOutlined style={{ color: "#13c2c2" }} />}
             valueStyle={{ fontSize: 24, fontWeight: 700 }}
           />
-        </Card>
+        </NeonCard>
       </div>
 
       {/* Filters */}
@@ -309,13 +335,14 @@ const EarlyCompletions: React.FC = () => {
 
       {/* Top savers by assignee */}
       {data.totalEarlyItems > 0 && (
-        <Card
-          size="small"
+        <NeonCard
           title="🏅 Top Savers by Assignee"
+          speed="slow"
           style={{ marginTop: 4 }}
+          bodyStyle={{ padding: 16 }}
         >
           <AssigneeSummary items={data.items} formatHours={formatHours} />
-        </Card>
+        </NeonCard>
       )}
     </div>
   );

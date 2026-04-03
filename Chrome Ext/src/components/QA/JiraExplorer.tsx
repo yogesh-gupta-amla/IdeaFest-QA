@@ -47,6 +47,7 @@ import {
 } from "recharts";
 import { useDashboardStore } from "../../store/useStore";
 import { runJqlQuery, type RawJiraIssue } from "../../services/jiraService";
+import NeonCard from "../common/NeonCard";
 import {
   applyExplorerTimeRange,
   buildExplorerBaseJql,
@@ -925,17 +926,9 @@ const JiraExplorer: React.FC = () => {
   // ─── Panel style helpers ──────────────────────────────────────────────────
 
   const card = (children: React.ReactNode, extra?: React.CSSProperties) => (
-    <div
-      style={{
-        background: "var(--qa-bg-card)",
-        border: "1px solid var(--qa-border)",
-        borderRadius: 12,
-        padding: "16px 20px",
-        ...extra,
-      }}
-    >
+    <NeonCard speed="slow" bodyStyle={{ padding: "16px 20px", ...extra }}>
       {children}
-    </div>
+    </NeonCard>
   );
 
   const tabBtn = (key: string, icon: React.ReactNode, label: string) => (

@@ -1,15 +1,6 @@
 import React, { useState } from "react";
-import {
-  Card,
-  Table,
-  Tag,
-  Spin,
-  Alert,
-  Statistic,
-  Row,
-  Col,
-  Badge,
-} from "antd";
+import { Table, Tag, Spin, Alert, Statistic, Row, Col, Badge } from "antd";
+import NeonCard from "../common/NeonCard";
 import {
   BarChart,
   Bar,
@@ -131,13 +122,10 @@ const TopStories: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         {stories.map((story, i) => (
           <Col key={story.storyKey} xs={24} md={8}>
-            <Card
-              style={{
-                background: "var(--qa-bg-card)",
-                border: `1px solid ${STORY_COLORS[i]}`,
-                borderRadius: 12,
-                borderLeftWidth: 4,
-              }}
+            <NeonCard
+              accent={STORY_COLORS[i]}
+              rainbow={false}
+              speed="slow"
               bodyStyle={{ padding: 16 }}
             >
               <div
@@ -205,7 +193,7 @@ const TopStories: React.FC = () => {
                   />
                 </Col>
               </Row>
-            </Card>
+            </NeonCard>
           </Col>
         ))}
       </Row>
@@ -248,15 +236,12 @@ const TopStories: React.FC = () => {
 
       {/* Expandable bug tables per story */}
       {stories.map((story, i) => (
-        <Card
+        <NeonCard
           key={story.storyKey}
-          style={{
-            background: "var(--qa-bg-card)",
-            border: "1px solid var(--qa-border)",
-            borderRadius: 12,
-            marginBottom: 16,
-          }}
-          styles={{ header: { borderBottom: "1px solid var(--qa-border)" } }}
+          accent={STORY_COLORS[i]}
+          rainbow={false}
+          speed="slow"
+          style={{ marginBottom: 16 }}
           title={
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ color: STORY_COLORS[i], fontWeight: 700 }}>
@@ -307,16 +292,18 @@ const TopStories: React.FC = () => {
           }
         >
           {expanded.has(story.storyKey) && (
-            <Table
-              columns={bugColumns}
-              dataSource={story.bugs}
-              rowKey="id"
-              size="small"
-              pagination={false}
-              scroll={{ x: 600 }}
-            />
+            <div style={{ padding: "0 4px 4px" }}>
+              <Table
+                columns={bugColumns}
+                dataSource={story.bugs}
+                rowKey="id"
+                size="small"
+                pagination={false}
+                scroll={{ x: 600 }}
+              />
+            </div>
           )}
-        </Card>
+        </NeonCard>
       ))}
     </div>
   );

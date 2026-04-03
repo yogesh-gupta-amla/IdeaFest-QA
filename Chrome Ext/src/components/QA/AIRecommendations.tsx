@@ -902,7 +902,7 @@ const AIRecommendations: React.FC = () => {
   const tone = scoreTone(analysis.projectHealthScore);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       {/* ══════════════════════════════════ HERO ══════════════ */}
       <div
         className="relative overflow-hidden rounded-[22px] ai-card-in"
@@ -1217,10 +1217,9 @@ const AIRecommendations: React.FC = () => {
                 window.
               </p>
             )}
-            </div>
-            </NeonCard>
-            </div>
-   
+          </div>
+        </NeonCard>
+      </div>
 
       {/* ══════════════════════════ IMMEDIATE ACTIONS ════════ */}
       <div>
@@ -1231,9 +1230,11 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.immediateActions.length}
         />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {analysis.aiInsightsPanel.immediateActions.map((a: AIImmediateAction, i: number) => (
-            <ActionCard key={a.issue} action={a} delay={i * 70} />
-          ))}
+          {analysis.aiInsightsPanel.immediateActions.map(
+            (a: AIImmediateAction, i: number) => (
+              <ActionCard key={a.issue} action={a} delay={i * 70} />
+            ),
+          )}
         </div>
       </div>
 
@@ -1246,9 +1247,11 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.risksAndPredictions.length}
         />
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          {analysis.aiInsightsPanel.risksAndPredictions.map((r: AIRiskPrediction, i: number) => (
-            <RiskCard key={r.risk} risk={r} delay={i * 80} />
-          ))}
+          {analysis.aiInsightsPanel.risksAndPredictions.map(
+            (r: AIRiskPrediction, i: number) => (
+              <RiskCard key={r.risk} risk={r} delay={i * 80} />
+            ),
+          )}
         </div>
       </div>
 
@@ -1300,9 +1303,11 @@ const AIRecommendations: React.FC = () => {
           count={analysis.aiInsightsPanel.optimizationTips.length}
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {analysis.aiInsightsPanel.optimizationTips.map((tip: AIOptimizationTip, i: number) => (
-            <TipCard key={tip.area} tip={tip} index={i} />
-          ))}
+          {analysis.aiInsightsPanel.optimizationTips.map(
+            (tip: AIOptimizationTip, i: number) => (
+              <TipCard key={tip.area} tip={tip} index={i} />
+            ),
+          )}
         </div>
       </div>
 
@@ -1315,45 +1320,47 @@ const AIRecommendations: React.FC = () => {
             accent="#3a86ff"
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {analysis.resourceOptimizationRecommendations.map((item: any, i: number) => (
-              <NeonCard
-                key={item.problem}
-                accent="#3a86ff"
-                rainbow={false}
-                delay={i * 80}
-                borderPx={2}
-              >
-                <div className="p-5">
-                  <div
-                    className="font-bold text-[13.5px] mb-2"
-                    style={{ color: T }}
-                  >
-                    {item.problem}
+            {analysis.resourceOptimizationRecommendations.map(
+              (item: any, i: number) => (
+                <NeonCard
+                  key={item.problem}
+                  accent="#3a86ff"
+                  rainbow={false}
+                  delay={i * 80}
+                  borderPx={2}
+                >
+                  <div className="p-5">
+                    <div
+                      className="font-bold text-[13.5px] mb-2"
+                      style={{ color: T }}
+                    >
+                      {item.problem}
+                    </div>
+                    <div
+                      className="text-[12.5px] leading-relaxed mb-2"
+                      style={{ color: TM }}
+                    >
+                      {item.currentState}
+                    </div>
+                    <div className="text-xs mb-3" style={{ color: TS }}>
+                      {item.recommendedAction}
+                    </div>
+                    <span
+                      className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full"
+                      style={{
+                        background: "rgba(58,134,255,0.12)",
+                        border: "1px solid rgba(58,134,255,0.3)",
+                        color: "#60a5fa",
+                        boxShadow: "0 0 12px rgba(58,134,255,0.2)",
+                      }}
+                    >
+                      <ArrowRight size={11} />
+                      {item.expectedOutcome}
+                    </span>
                   </div>
-                  <div
-                    className="text-[12.5px] leading-relaxed mb-2"
-                    style={{ color: TM }}
-                  >
-                    {item.currentState}
-                  </div>
-                  <div className="text-xs mb-3" style={{ color: TS }}>
-                    {item.recommendedAction}
-                  </div>
-                  <span
-                    className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full"
-                    style={{
-                      background: "rgba(58,134,255,0.12)",
-                      border: "1px solid rgba(58,134,255,0.3)",
-                      color: "#60a5fa",
-                      boxShadow: "0 0 12px rgba(58,134,255,0.2)",
-                    }}
-                  >
-                    <ArrowRight size={11} />
-                    {item.expectedOutcome}
-                  </span>
-                </div>
-              </NeonCard>
-            ))}
+                </NeonCard>
+              ),
+            )}
           </div>
         </div>
       )}

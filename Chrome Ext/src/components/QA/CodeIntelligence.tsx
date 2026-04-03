@@ -88,7 +88,7 @@ const CodeIntelligence: React.FC = () => {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Summary Cards */}
       <div
         style={{
@@ -418,12 +418,21 @@ const ReusableComponentsTab: React.FC<{
                     style={{ color: "var(--qa-text-primary)", fontSize: 12 }}
                   >
                     Related Issues:
-                  </strong>{" "}
-                  {item.relatedIssues.map((k) => (
-                    <Tag key={k} style={{ marginBottom: 4 }}>
-                      {k}
-                    </Tag>
-                  ))}
+                  </strong>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      marginTop: 4,
+                    }}
+                  >
+                    {item.relatedIssues.map((k) => (
+                      <Tag key={k} style={{ margin: 0 }}>
+                        {k}
+                      </Tag>
+                    ))}
+                  </span>
                 </div>
                 {item.relevantCommits.length > 0 && (
                   <div style={{ marginBottom: 8 }}>
@@ -619,9 +628,16 @@ const DuplicateDetectionTab: React.FC<{ items: DuplicateDetection[] }> = ({
               style={{ color: "#f43f5e", fontSize: 18, marginTop: 2 }}
             />
             <div style={{ flex: 1 }}>
-              <div style={{ marginBottom: 6 }}>
+              <div
+                style={{
+                  marginBottom: 6,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
                 {item.issueIds.map((k, ki) => (
-                  <Tag key={k} color="orange" style={{ marginBottom: 4 }}>
+                  <Tag key={k} color="orange" style={{ margin: 0 }}>
                     {k}
                     {item.issueTypes?.[ki] ? ` (${item.issueTypes[ki]})` : ""}
                   </Tag>
@@ -693,7 +709,7 @@ const DeveloperInsightsTab: React.FC<{ items: DeveloperInsight[] }> = ({
       render: (v: string) => (
         <span style={{ fontSize: 12 }}>
           {v.split(", ").map((a) => (
-            <Tag key={a} style={{ marginBottom: 2 }}>
+            <Tag key={a} style={{ margin: "0 4px 4px 0" }}>
               {a}
             </Tag>
           ))}

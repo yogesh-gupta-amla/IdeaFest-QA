@@ -576,7 +576,7 @@ const ProjectHealth: React.FC = () => {
   const isOrange = analysis.healthStatus === "ORANGE";
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Status Banner */}
       <div
         style={{
@@ -584,7 +584,6 @@ const ProjectHealth: React.FC = () => {
           border: `1px solid ${statusColor}`,
           borderRadius: 12,
           padding: "16px 24px",
-          marginBottom: 20,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -649,7 +648,7 @@ const ProjectHealth: React.FC = () => {
       </div>
 
       {/* KPI Stats */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+      <Row gutter={[16, 16]}>
         {[
           {
             label: "Total Active Issues",
@@ -704,7 +703,7 @@ const ProjectHealth: React.FC = () => {
       </Row>
 
       {/* Charts Row */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+      <Row gutter={[16, 16]}>
         {/* Gauge */}
         <Col xs={24} md={8}>
           <ChartCard title="Health Score" id="gauge-chart" height={200}>
@@ -822,7 +821,6 @@ const ProjectHealth: React.FC = () => {
             <Tag color="blue">{getTimeRangeLabel(queryTimeRange)}</Tag>
           </div>
         }
-        style={{ marginBottom: 20 }}
         bodyStyle={{ padding: 16 }}
         speed="slow"
       >

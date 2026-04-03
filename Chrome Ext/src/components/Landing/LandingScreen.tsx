@@ -24,79 +24,6 @@ interface LandingScreenProps {
   onLoadProject: (key: string, name: string) => void;
 }
 
-/* ── Pre-seeded bubble data (no Math.random — safe for SSR) ── */
-const LANDING_BUBBLES = [
-  { left: 4, size: 18, dur: 18, delay: 0, opacity: 0.7 },
-  { left: 11, size: 38, dur: 24, delay: -6, opacity: 0.5 },
-  { left: 19, size: 12, dur: 13, delay: -13, opacity: 0.8 },
-  { left: 27, size: 58, dur: 30, delay: -4, opacity: 0.4 },
-  { left: 35, size: 24, dur: 20, delay: -10, opacity: 0.6 },
-  { left: 43, size: 15, dur: 15, delay: -18, opacity: 0.7 },
-  { left: 51, size: 46, dur: 26, delay: -7, opacity: 0.45 },
-  { left: 59, size: 20, dur: 17, delay: -14, opacity: 0.65 },
-  { left: 67, size: 32, dur: 22, delay: -2, opacity: 0.5 },
-  { left: 75, size: 10, dur: 12, delay: -11, opacity: 0.75 },
-  { left: 83, size: 50, dur: 32, delay: -17, opacity: 0.4 },
-  { left: 91, size: 26, dur: 19, delay: -8, opacity: 0.55 },
-  { left: 9, size: 9, dur: 11, delay: -20, opacity: 0.8 },
-  { left: 32, size: 64, dur: 38, delay: -3, opacity: 0.35 },
-  { left: 47, size: 19, dur: 16, delay: -15, opacity: 0.6 },
-  { left: 63, size: 13, dur: 14, delay: -9, opacity: 0.72 },
-  { left: 79, size: 40, dur: 25, delay: -12, opacity: 0.45 },
-  { left: 87, size: 16, dur: 15, delay: -5, opacity: 0.68 },
-] as const;
-
-/** Theme-aware floating bubbles for the landing screen */
-function LandingBubbles() {
-  return (
-    <div
-      className="absolute inset-0 overflow-hidden pointer-events-none"
-      style={{ zIndex: 0 }}
-    >
-      {/* depth radial glow at the base */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 50% at 50% 100%, var(--accent-glow, rgba(139,92,246,0.12)) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }}
-      />
-      {LANDING_BUBBLES.map((b, i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            left: `${b.left}%`,
-            bottom: "-60px",
-            width: b.size + 3,
-            height: b.size + 3,
-            borderRadius: "50%",
-            background:
-              "conic-gradient(from 200deg, #060620, #0033bb, #0066ff, #00aaff, #0077dd, #0044cc, #001199, #060620)",
-            padding: "1.5px",
-            boxSizing: "border-box",
-            opacity: b.opacity,
-            animation: `${i % 3 === 0 ? "bubble-rise-sm" : "bubble-rise"} ${b.dur}s ease-in-out ${b.delay}s infinite`,
-            willChange: "transform, opacity",
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              borderRadius: "50%",
-              background:
-                "radial-gradient(ellipse 22% 14% at 30% 24%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 55%, transparent 100%), " +
-                "rgb(10, 14, 52)",
-            }}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** Decorative glowing orb behind the card */
 function GlowOrb({
   className,
@@ -160,9 +87,6 @@ export default function LandingScreen({
           "var(--bg-gradient, linear-gradient(135deg, #050510 0%, #0d0621 35%, #0a0a1a 65%, #050510 100%))",
       }}
     >
-      {/* ── Floating bubble background ── */}
-      <LandingBubbles />
-
       {/* ── Background decorative orbs ── */}
       <GlowOrb
         className="w-96 h-96 -top-24 -left-24"

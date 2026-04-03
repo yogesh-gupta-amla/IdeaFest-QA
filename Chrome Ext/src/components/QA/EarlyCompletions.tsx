@@ -282,7 +282,7 @@ const EarlyCompletions: React.FC = () => {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Header */}
       <div
         style={{
@@ -323,7 +323,12 @@ const EarlyCompletions: React.FC = () => {
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
         </NeonCard>
-        <NeonCard style={{ borderLeft: "3px solid #52c41a" }}>
+        <NeonCard
+          accent="#52c41a"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Early Completed"
             value={data.totalEarlyItems}
@@ -345,7 +350,12 @@ const EarlyCompletions: React.FC = () => {
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
         </NeonCard>
-        <NeonCard style={{ borderLeft: "3px solid #722ed1" }}>
+        <NeonCard
+          accent="#faad14"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
           <Statistic
             title="Avg % Time Saved"
             value={data.avgPercentSaved}

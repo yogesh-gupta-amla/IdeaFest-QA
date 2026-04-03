@@ -228,9 +228,9 @@ const AgeingAnalysis: React.FC = () => {
   };
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* JQL Query Panel */}
-      <div style={{ marginBottom: 16 }}>
+      <div>
         <Button
           icon={<CodeOutlined />}
           size="small"
@@ -339,7 +339,7 @@ const AgeingAnalysis: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+      <Row gutter={[16, 16]}>
         {[
           {
             label: "Reported >48 Hrs",

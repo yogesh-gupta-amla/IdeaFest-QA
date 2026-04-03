@@ -262,12 +262,9 @@ const OverburntItems: React.FC = () => {
   ];
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* AI Recommendation Banner */}
-      <NeonCard
-        style={{ marginBottom: 16 }}
-        bodyStyle={{ padding: "16px 20px" }}
-      >
+      <NeonCard bodyStyle={{ padding: "16px 20px" }}>
         <Row align="middle" gutter={16}>
           <Col flex="auto">
             <div
@@ -329,7 +326,7 @@ const OverburntItems: React.FC = () => {
       />
 
       {/* Overburn Insights Cards */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
+      <Row gutter={[12, 12]}>
         {[
           {
             label: "Total Overburnt",

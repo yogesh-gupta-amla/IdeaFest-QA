@@ -1,11 +1,21 @@
 export function storageGet(keys: string[]): Promise<Record<string, unknown>> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(keys, (result) => resolve(result));
-  });
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      try {
+        result[key] = JSON.parse(raw);
+      } catch {
+        result[key] = raw;
+      }
+    }
+  }
+  return Promise.resolve(result);
 }
 
 export function storageSet(obj: Record<string, unknown>): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set(obj, () => resolve());
-  });
+  for (const [key, value] of Object.entries(obj)) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+  return Promise.resolve();
 }

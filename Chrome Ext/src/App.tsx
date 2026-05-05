@@ -103,12 +103,21 @@ export default function App() {
       if (stored.jiraTokenB64) setAuthToken(stored.jiraTokenB64 as string);
       if (stored.authMode) {
         const mode = stored.authMode as AuthMode;
-        setAuthMode(mode);
-        if (stored.jiraUrl && (mode === "session" || mode === "token")) {
+        if (stored.jiraUrl && mode === "token" && stored.jiraTokenB64) {
           await attemptAutoConnect(
             stored.jiraUrl as string,
-            mode === "token" ? (stored.jiraTokenB64 as string | null) : null,
-          ).catch(() => {});
+            stored.jiraTokenB64 as string,
+          ).catch(async () => {
+            setAuthMode("none");
+            setAuthToken(null);
+            setUser(null);
+            await storageSet({ authMode: "none" });
+          });
+        } else {
+          setAuthMode("none");
+          setAuthToken(null);
+          setUser(null);
+          await storageSet({ authMode: "none" });
         }
       }
       setInitializing(false);
@@ -123,7 +132,7 @@ export default function App() {
     async (url: string, token: string | null) => {
       const auth = await validateAuth(url, token);
       if (auth.success && auth.user) {
-        await onConnected(url, auth.user, token ? "token" : "session", token);
+        await onConnected(url, auth.user, "token", token);
       }
     },
     [], // eslint-disable-line react-hooks/exhaustive-deps
@@ -187,40 +196,27 @@ export default function App() {
         return;
       }
 
-      if (email && token) {
-        // Token auth
-        const b64 = btoa(`${email}:${token}`);
-        showToast("Authenticating with token…", "info");
-        const auth = await validateAuth(raw, b64);
-        if (auth.success && auth.user) {
-          await storageSet({
-            jiraUrl: raw,
-            jiraEmail: email,
-            jiraTokenB64: b64,
-            authMode: "token",
-          });
-          await onConnected(raw, auth.user, "token", b64);
-        } else {
-          showToast(auth.error || "Authentication failed", "error");
-        }
+      if (!email || !token) {
+        showToast("Enter Atlassian email and API token", "error");
+        return false;
+      }
+
+      const b64 = btoa(`${email}:${token}`);
+      showToast("Authenticating with token…", "info");
+      const auth = await validateAuth(raw, b64);
+      if (auth.success && auth.user) {
+        await storageSet({
+          jiraUrl: raw,
+          jiraEmail: email,
+          jiraTokenB64: b64,
+          authMode: "token",
+        });
+        await onConnected(raw, auth.user, "token", b64);
       } else {
-        // Session auth
-        showToast("Checking browser session…", "info");
-        const auth = await validateAuth(raw, null);
-        if (auth.success && auth.user) {
-          await storageSet({
-            jiraUrl: raw,
-            authMode: "session",
-            jiraTokenB64: null,
-          });
-          await onConnected(raw, auth.user, "session", null);
-        } else {
-          showToast(
-            "Session not found — enter email & API token below",
-            "error",
-          );
-          return false;
-        }
+        setAuthMode("none");
+        setUser(null);
+        showToast(auth.error || "Authentication failed", "error");
+        return false;
       }
       return true;
     },

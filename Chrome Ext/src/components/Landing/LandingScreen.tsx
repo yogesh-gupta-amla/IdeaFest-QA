@@ -2,9 +2,7 @@ import React, { useState } from "react";
 import InsightsLogo from "../common/InsightsLogo";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
 import {
-  Link,
   Lock,
-  Zap,
   ChevronRight,
   CheckCircle2,
   FolderOpen,
@@ -51,18 +49,13 @@ export default function LandingScreen({
   const [url, setUrl] = useState(jiraUrl || "");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
-  const [showTokenSection, setShowTokenSection] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
 
-  const connected = authMode !== "none";
+  const connected = authMode === "token" && !!user;
 
-  const handleSessionConnect = async () => {
-    setConnecting(true);
-    const ok = await onConnect(url);
-    if (ok === false) setShowTokenSection(true);
-    setConnecting(false);
-  };
+  // Session-based auth disabled — not supported in standalone React app
+  // const handleSessionConnect = async () => { ... };
 
   const handleTokenConnect = async () => {
     setConnecting(true);
@@ -178,7 +171,7 @@ export default function LandingScreen({
           </div>
         </div>
 
-        {/* ── Step 1: Connect to Jira ── */}
+        {/* ── Step 1: Jira Credentials ── */}
         <div
           className="rounded-2xl p-6 transition-all duration-300"
           style={{
@@ -192,7 +185,7 @@ export default function LandingScreen({
               : "0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
           }}
         >
-          {/* Step header */}
+          {/* Card header */}
           <div className="flex items-center gap-3 mb-5">
             <div
               className="w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 transition-all duration-300"
@@ -208,14 +201,14 @@ export default function LandingScreen({
                   : "var(--qa-text-secondary, #a78bfa)",
               }}
             >
-              {connected ? <CheckCircle2 size={14} /> : "1"}
+              {connected ? <CheckCircle2 size={14} /> : <Lock size={13} />}
             </div>
             <div className="flex-1">
               <span
                 className="font-semibold text-sm"
                 style={{ color: "var(--text-heading, #e2e8f0)" }}
               >
-                Connect to Jira
+                {connected ? "Connected" : "Jira Credentials"}
               </span>
             </div>
             {connected && user && (
@@ -228,133 +221,148 @@ export default function LandingScreen({
             )}
           </div>
 
-          {/* URL + Connect button */}
-          <div className="flex gap-2.5">
-            <div className="relative flex-1">
-              <Link
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-muted, #64748b)" }}
-              />
-              <input
-                type="url"
-                placeholder="https://company.atlassian.net"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                className="w-full rounded-xl text-sm outline-none transition-all duration-200"
-                style={{
-                  paddingLeft: 34,
-                  paddingRight: 12,
-                  paddingTop: 10,
-                  paddingBottom: 10,
-                  background: "var(--input-bg, rgba(255,255,255,0.05))",
-                  border: "1px solid var(--border, rgba(255,255,255,0.1))",
-                  color: "var(--text-heading, #e2e8f0)",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor =
-                    "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
-                  e.currentTarget.style.boxShadow =
-                    "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor =
-                    "var(--border, rgba(255,255,255,0.1))";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
-            </div>
-            <button
-              onClick={handleSessionConnect}
-              disabled={connecting || !url.trim()}
-              className="flex items-center gap-1.5 px-4 rounded-xl text-sm font-semibold text-white transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                background: connecting
-                  ? "var(--accent-glow, rgba(139,92,246,0.5))"
-                  : `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
-                boxShadow: connecting
-                  ? "none"
-                  : "0 4px 14px var(--accent-glow, rgba(139,92,246,0.4))",
-              }}
-              onMouseEnter={(e) => {
-                if (!connecting)
-                  e.currentTarget.style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
-              {connecting ? (
-                <RefreshCw size={13} className="animate-spin" />
-              ) : (
-                <Zap size={13} />
-              )}
-              {connecting ? "Connecting…" : connected ? "Reconnect" : "Connect"}
-            </button>
-          </div>
+          {!connected && (
+            <div className="flex flex-col gap-3">
+              {/* Jira URL */}
+              <div>
+                <label
+                  className="text-xs font-medium mb-1.5 block"
+                  style={{ color: "var(--text-muted, #94a3b8)" }}
+                >
+                  Jira URL
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://company.atlassian.net"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-xl text-sm outline-none transition-all duration-200"
+                  style={{
+                    padding: "10px 12px",
+                    background: "var(--input-bg, rgba(255,255,255,0.05))",
+                    border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                    color: "var(--text-heading, #e2e8f0)",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "var(--border, rgba(255,255,255,0.1))";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                />
+              </div>
 
-          {/* Token auth fallback */}
-          {showTokenSection && !connected && (
-            <div
-              className="mt-4 pt-4"
-              style={{
-                borderTop: "1px dashed var(--border, rgba(255,255,255,0.08))",
-                animation: "fadeInUp 0.3s ease both",
-              }}
-            >
-              <p
-                className="text-xs mb-3"
-                style={{ color: "var(--text-muted, #64748b)" }}
-              >
-                Session not found — enter your Atlassian email &amp; API token.
-              </p>
-              <div className="flex gap-2 flex-wrap mb-3">
+              {/* Email */}
+              <div>
+                <label
+                  className="text-xs font-medium mb-1.5 block"
+                  style={{ color: "var(--text-muted, #94a3b8)" }}
+                >
+                  Atlassian Email
+                </label>
                 <input
                   type="email"
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="off"
-                  className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
+                  className="w-full rounded-xl text-sm outline-none transition-all duration-200"
                   style={{
-                    padding: "9px 12px",
+                    padding: "10px 12px",
                     background: "var(--input-bg, rgba(255,255,255,0.05))",
                     border: "1px solid var(--border, rgba(255,255,255,0.1))",
                     color: "var(--text-heading, #e2e8f0)",
                   }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "var(--border, rgba(255,255,255,0.1))";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 />
+              </div>
+
+              {/* API Token */}
+              <div>
+                <label
+                  className="text-xs font-medium mb-1.5 block"
+                  style={{ color: "var(--text-muted, #94a3b8)" }}
+                >
+                  API Token
+                </label>
                 <input
                   type="password"
-                  placeholder="API Token"
+                  placeholder="Paste your Atlassian API token"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   autoComplete="off"
-                  className="flex-1 min-w-36 rounded-xl text-xs outline-none transition-all duration-200"
+                  className="w-full rounded-xl text-sm outline-none transition-all duration-200"
                   style={{
-                    padding: "9px 12px",
+                    padding: "10px 12px",
                     background: "var(--input-bg, rgba(255,255,255,0.05))",
                     border: "1px solid var(--border, rgba(255,255,255,0.1))",
                     color: "var(--text-heading, #e2e8f0)",
                   }}
-                />
-                <button
-                  onClick={handleTokenConnect}
-                  disabled={connecting}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white whitespace-nowrap disabled:opacity-50"
-                  style={{
-                    background: `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
-                    boxShadow:
-                      "0 4px 12px var(--accent-glow, rgba(139,92,246,0.3))",
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
                   }}
-                >
-                  <Lock size={11} />
-                  {connecting ? "…" : "Authenticate"}
-                </button>
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor =
+                      "var(--border, rgba(255,255,255,0.1))";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && url && email && token)
+                      void handleTokenConnect();
+                  }}
+                />
               </div>
+
+              {/* Authenticate button */}
+              <button
+                onClick={handleTokenConnect}
+                disabled={
+                  connecting || !url.trim() || !email.trim() || !token.trim()
+                }
+                className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-1"
+                style={{
+                  background: `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
+                  boxShadow:
+                    "0 4px 14px var(--accent-glow, rgba(139,92,246,0.4))",
+                }}
+                onMouseEnter={(e) => {
+                  if (!connecting)
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                {connecting ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : (
+                  <Lock size={13} />
+                )}
+                {connecting ? "Connecting…" : "Connect to Jira"}
+              </button>
+
               <p
-                className="text-xs"
+                className="text-xs text-center"
                 style={{ color: "var(--text-muted, #64748b)" }}
               >
                 Generate a token at{" "}

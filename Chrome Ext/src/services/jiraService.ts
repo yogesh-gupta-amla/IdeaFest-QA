@@ -1,9 +1,27 @@
 import type { JiraIssue, JiraUser, JiraProject } from "../types";
 import { apiLogger } from "../utils/apiLogger";
 
-function buildFetchOptions(authToken: string | null): RequestInit {
+function shouldUseDevProxy(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  );
+}
+
+function toRequestUrl(baseUrl: string, url: string): string {
+  if (!shouldUseDevProxy()) return url;
+  const parsed = new URL(url);
+  return `/jira-proxy${parsed.pathname}${parsed.search}`;
+}
+
+function buildFetchOptions(
+  authToken: string | null,
+  baseUrl: string,
+): RequestInit {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (authToken) headers["Authorization"] = `Basic ${authToken}`;
+  if (shouldUseDevProxy()) headers["x-jira-base-url"] = baseUrl;
   const opts: RequestInit = { method: "GET", headers };
   if (!authToken) opts.credentials = "include";
   return opts;
@@ -231,7 +249,10 @@ export async function fetchAllPages(
     const t0 = Date.now();
 
     try {
-      const res = await fetch(url, buildFetchOptions(authToken));
+      const res = await fetch(
+        toRequestUrl(baseUrl, url),
+        buildFetchOptions(authToken, baseUrl),
+      );
       if (!res.ok) {
         const text = await res.text();
         return {
@@ -276,7 +297,10 @@ export async function validateAuth(
   const url = `${baseUrl}/rest/api/3/myself`;
   const t0 = Date.now();
   try {
-    const res = await fetch(url, buildFetchOptions(authToken));
+    const res = await fetch(
+      toRequestUrl(baseUrl, url),
+      buildFetchOptions(authToken, baseUrl),
+    );
     apiLogger.log("VALIDATE_AUTH", url, {
       headers: authHeaders(authToken),
       durationMs: Date.now() - t0,
@@ -310,7 +334,10 @@ export async function fetchProjects(
   const url = `${baseUrl}/rest/api/3/project/search?maxResults=100&orderBy=name&status=live`;
   const t0 = Date.now();
   try {
-    const res = await fetch(url, buildFetchOptions(authToken));
+    const res = await fetch(
+      toRequestUrl(baseUrl, url),
+      buildFetchOptions(authToken, baseUrl),
+    );
     apiLogger.log("FETCH_PROJECTS", url, {
       headers: authHeaders(authToken),
       durationMs: Date.now() - t0,
@@ -367,7 +394,10 @@ export async function fetchJiraIssues(
       });
       const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
       const t0 = Date.now();
-      const res = await fetch(url, buildFetchOptions(authToken));
+      const res = await fetch(
+        toRequestUrl(baseUrl, url),
+        buildFetchOptions(authToken, baseUrl),
+      );
       apiLogger.log("FETCH_JIRA", url, {
         headers: authHeaders(authToken),
         jql,
@@ -414,7 +444,10 @@ export async function fetchActiveSprint(
     for (const boardType of ["scrum", "kanban"]) {
       const boardUrl = `${baseUrl}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&type=${boardType}&maxResults=1`;
       const t0 = Date.now();
-      const boardRes = await fetch(boardUrl, buildFetchOptions(authToken));
+      const boardRes = await fetch(
+        toRequestUrl(baseUrl, boardUrl),
+        buildFetchOptions(authToken, baseUrl),
+      );
       apiLogger.log("FETCH_ACTIVE_SPRINT", boardUrl, {
         headers: authHeaders(authToken),
         durationMs: Date.now() - t0,
@@ -424,9 +457,10 @@ export async function fetchActiveSprint(
       const boards = boardData.values || [];
       if (boards.length === 0) continue;
       const boardId = boards[0].id;
+      const sprintUrl = `${baseUrl}/rest/agile/1.0/board/${boardId}/sprint?state=active&maxResults=1`;
       const sprintRes = await fetch(
-        `${baseUrl}/rest/agile/1.0/board/${boardId}/sprint?state=active&maxResults=1`,
-        buildFetchOptions(authToken),
+        toRequestUrl(baseUrl, sprintUrl),
+        buildFetchOptions(authToken, baseUrl),
       );
       if (!sprintRes.ok) continue;
       const sprintData = await sprintRes.json();
@@ -489,7 +523,10 @@ export async function runJqlQuery(
   const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
   const t0 = Date.now();
   try {
-    const res = await fetch(url, buildFetchOptions(authToken));
+    const res = await fetch(
+      toRequestUrl(baseUrl, url),
+      buildFetchOptions(authToken, baseUrl),
+    );
     apiLogger.log("RUN_JQL", url, {
       headers: authHeaders(authToken),
       jql,
@@ -602,14 +639,16 @@ export async function fetchDevInfo(
       const batchResults = await Promise.all(
         batch.map(async (issueId) => {
           try {
+            const primaryDevStatusUrl = `${baseUrl}/rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=GitHub&dataType=repository`;
             const res = await fetch(
-              `${baseUrl}/rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=GitHub&dataType=repository`,
-              buildFetchOptions(authToken),
+              toRequestUrl(baseUrl, primaryDevStatusUrl),
+              buildFetchOptions(authToken, baseUrl),
             );
             if (!res.ok) {
+              const fallbackDevStatusUrl = `${baseUrl}/rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=stash&dataType=repository`;
               const res2 = await fetch(
-                `${baseUrl}/rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=stash&dataType=repository`,
-                buildFetchOptions(authToken),
+                toRequestUrl(baseUrl, fallbackDevStatusUrl),
+                buildFetchOptions(authToken, baseUrl),
               );
               if (!res2.ok) return { issueId, commits: [], pullRequests: [] };
               return parseDevStatusResponse(issueId, await res2.json());

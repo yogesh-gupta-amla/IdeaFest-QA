@@ -21,7 +21,10 @@
     "type": "module"
   },
   "permissions": ["storage", "tabs"],
-  "host_permissions": ["https://*.atlassian.net/"],
+  "host_permissions": [
+    "https://*.atlassian.net/*",
+    "https://amla.atlassian.net/*"
+  ],
   "web_accessible_resources": [
     {
       "resources": ["index.html", "assets/*", "icons/*"],

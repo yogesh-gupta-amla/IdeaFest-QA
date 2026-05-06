@@ -1066,8 +1066,8 @@ const JiraExplorer: React.FC = () => {
                 </span>
                 <InputNumber
                   value={maxResults}
-                  onChange={(v) => setMaxResults(v || 500)}
-                  min={1}
+                  onChange={(v) => setMaxResults(typeof v === "number" ? v : 500)}
+                  min={0}
                   max={1000}
                   step={100}
                   style={{ width: 80 }}

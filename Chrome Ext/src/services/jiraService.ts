@@ -33,6 +33,36 @@ function authHeaders(authToken: string | null): Record<string, string> {
   return h;
 }
 
+function shouldUseBackgroundRelay(): boolean {
+  if (shouldUseDevProxy()) return false;
+  return (
+    typeof chrome !== "undefined" &&
+    !!chrome.runtime?.id &&
+    typeof chrome.runtime.sendMessage === "function"
+  );
+}
+
+function sendBackgroundMessage<T>(
+  message: Record<string, unknown>,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response: T) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+      if (response === undefined || response === null) {
+        reject(
+          new Error("No response from extension background service worker"),
+        );
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
 // Extract plain text from Jira ADF (Atlassian Document Format) description
 function extractAdfText(node: unknown): string {
   if (!node || typeof node !== "object") return "";
@@ -232,10 +262,68 @@ export async function fetchAllPages(
   total?: number;
   error?: string;
 }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      type FetchJiraPageResponse = {
+        success: boolean;
+        issues?: JiraIssue[];
+        total?: number;
+        startAt?: number;
+        isLast?: boolean;
+        nextPageToken?: string | null;
+        error?: string;
+      };
+
+      const allIssues: JiraIssue[] = [];
+      let startAt = 0;
+      let total = 0;
+      let isLast = false;
+      let nextPageToken: string | null = null;
+
+      while (!isLast) {
+        const page: FetchJiraPageResponse =
+          await sendBackgroundMessage<FetchJiraPageResponse>({
+          type: "FETCH_JIRA_PAGE",
+          baseUrl,
+          jql,
+          startAt,
+          nextPageToken,
+          pageSize,
+          authToken,
+        });
+
+        if (!page.success) {
+          return {
+            success: false,
+            error: page.error || "Failed to fetch Jira page",
+          };
+        }
+
+        const pageIssues = page.issues || [];
+        allIssues.push(...pageIssues);
+        total = page.total ?? total;
+        nextPageToken =
+          typeof page.nextPageToken === "string" ? page.nextPageToken : null;
+        isLast = !!page.isLast || (nextPageToken === null && pageIssues.length === 0);
+        // If token-based pagination is used, we keep startAt for progress only.
+        // Otherwise we advance by startAt.
+        startAt = page.startAt ?? startAt + pageIssues.length;
+
+        if (onProgress) onProgress(allIssues.length, total, label);
+        if (pageIssues.length === 0) break;
+      }
+
+      return { success: true, issues: allIssues, total };
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   const allIssues: JiraIssue[] = [];
   let startAt = 0;
   let isLast = false;
   let total = 0;
+  let nextPageToken: string | null = null;
 
   while (!isLast) {
     const params = new URLSearchParams({
@@ -243,8 +331,9 @@ export async function fetchAllPages(
       maxResults: String(pageSize),
       fields: DASHBOARD_FIELDS,
       expand: "changelog",
-      startAt: String(startAt),
     });
+    if (nextPageToken) params.set("nextPageToken", nextPageToken);
+    else params.set("startAt", String(startAt)); // fallback for older behavior
     const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
     const t0 = Date.now();
 
@@ -261,10 +350,18 @@ export async function fetchAllPages(
         };
       }
       const data = await res.json();
-      const pageTotal = data.total ?? 0;
+      const pageTotal = typeof data.total === "number" ? data.total : 0;
       const pageIssues: JiraIssue[] = (data.issues || []).map(mapIssue);
       const nextStartAt = startAt + pageIssues.length;
-      const pageIsLast = pageIssues.length === 0 || nextStartAt >= pageTotal;
+      const responseNextToken =
+        typeof data.nextPageToken === "string" ? data.nextPageToken : null;
+      const responseIsLast = data.isLast === true;
+      // Prefer Jira's token + isLast when available; fallback to total/startAt.
+      const pageIsLast = responseIsLast
+        ? true
+        : responseNextToken
+          ? false
+          : pageIssues.length === 0 || nextStartAt >= pageTotal;
 
       apiLogger.log("FETCH_JIRA_PAGE", url, {
         headers: authHeaders(authToken),
@@ -273,8 +370,9 @@ export async function fetchAllPages(
       });
 
       allIssues.push(...pageIssues);
-      total = pageTotal;
+      total = pageTotal || total || allIssues.length;
       isLast = pageIsLast;
+      nextPageToken = responseNextToken;
       startAt = nextStartAt;
 
       if (onProgress) onProgress(allIssues.length, total, label);
@@ -294,6 +392,22 @@ export async function validateAuth(
   baseUrl: string,
   authToken: string | null,
 ): Promise<{ success: boolean; user?: JiraUser; error?: string }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        user?: JiraUser;
+        error?: string;
+      }>({
+        type: "VALIDATE_AUTH",
+        baseUrl,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   const url = `${baseUrl}/rest/api/3/myself`;
   const t0 = Date.now();
   try {
@@ -331,6 +445,22 @@ export async function fetchProjects(
   baseUrl: string,
   authToken: string | null,
 ): Promise<{ success: boolean; projects?: JiraProject[]; error?: string }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        projects?: JiraProject[];
+        error?: string;
+      }>({
+        type: "FETCH_PROJECTS",
+        baseUrl,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   const url = `${baseUrl}/rest/api/3/project/search?maxResults=100&orderBy=name&status=live`;
   const t0 = Date.now();
   try {
@@ -376,11 +506,31 @@ export async function fetchJiraIssues(
   total?: number;
   error?: string;
 }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        issues?: JiraIssue[];
+        total?: number;
+        error?: string;
+      }>({
+        type: "FETCH_JIRA",
+        baseUrl,
+        jql,
+        maxResults,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   const fetchAll = maxResults <= 0;
   const PAGE_SIZE = fetchAll ? 100 : Math.min(maxResults, 100);
   const CAP = fetchAll ? Infinity : maxResults;
   let startAt = 0;
   let totalAvailable = Infinity;
+  let nextPageToken: string | null = null;
   const allIssues: JiraIssue[] = [];
 
   try {
@@ -390,8 +540,9 @@ export async function fetchJiraIssues(
         maxResults: String(Math.min(PAGE_SIZE, CAP - allIssues.length)),
         fields: DASHBOARD_FIELDS,
         expand: "changelog",
-        startAt: String(startAt),
       });
+      if (nextPageToken) params.set("nextPageToken", nextPageToken);
+      else params.set("startAt", String(startAt)); // fallback
       const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
       const t0 = Date.now();
       const res = await fetch(
@@ -411,11 +562,16 @@ export async function fetchJiraIssues(
         };
       }
       const data = await res.json();
-      totalAvailable = data.total ?? 0;
+      totalAvailable = typeof data.total === "number" ? data.total : totalAvailable;
+      nextPageToken =
+        typeof data.nextPageToken === "string" ? data.nextPageToken : null;
       const pageIssues: JiraIssue[] = (data.issues || []).map(mapIssue);
       allIssues.push(...pageIssues);
+      if (data.isLast === true) break;
       if (pageIssues.length === 0) break;
       startAt += pageIssues.length;
+      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+        break;
     }
     return {
       success: true,
@@ -440,6 +596,24 @@ export async function fetchActiveSprint(
   sprintGoal?: string;
   error?: string;
 }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        sprintName?: string;
+        sprintGoal?: string;
+        error?: string;
+      }>({
+        type: "FETCH_ACTIVE_SPRINT",
+        baseUrl,
+        projectKey,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   try {
     for (const boardType of ["scrum", "kanban"]) {
       const boardUrl = `${baseUrl}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&type=${boardType}&maxResults=1`;
@@ -515,81 +689,142 @@ export async function runJqlQuery(
   total?: number;
   error?: string;
 }> {
-  const params = new URLSearchParams({
-    jql,
-    maxResults: String(maxResults),
-    fields: EXPLORER_FIELDS,
-  });
-  const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
-  const t0 = Date.now();
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        issues?: RawJiraIssue[];
+        total?: number;
+        error?: string;
+      }>({
+        type: "RUN_JQL",
+        baseUrl,
+        jql,
+        maxResults,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   try {
-    const res = await fetch(
-      toRequestUrl(baseUrl, url),
-      buildFetchOptions(authToken, baseUrl),
-    );
-    apiLogger.log("RUN_JQL", url, {
+    const CAP = maxResults <= 0 ? Infinity : maxResults;
+    const PAGE_SIZE = 100;
+    const all: RawJiraIssue[] = [];
+    let startAt = 0;
+    let totalAvailable = Infinity;
+    let nextPageToken: string | null = null;
+
+    const t0 = Date.now();
+    while (startAt < totalAvailable && all.length < CAP) {
+      const params = new URLSearchParams({
+        jql,
+        maxResults: String(Math.min(PAGE_SIZE, CAP - all.length)),
+        fields: EXPLORER_FIELDS,
+      });
+      if (nextPageToken) params.set("nextPageToken", nextPageToken);
+      else params.set("startAt", String(startAt)); // fallback
+      const url = `${baseUrl}/rest/api/3/search/jql?${params}`;
+      const pageT0 = Date.now();
+
+      const res = await fetch(
+        toRequestUrl(baseUrl, url),
+        buildFetchOptions(authToken, baseUrl),
+      );
+
+      apiLogger.log("RUN_JQL", url, {
+        headers: authHeaders(authToken),
+        jql: `${jql} | page startAt=${startAt}`,
+        durationMs: Date.now() - pageT0,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        return {
+          success: false,
+          error: `Jira API error (${res.status}): ${text.substring(0, 500)}`,
+        };
+      }
+
+      const data = await res.json();
+      totalAvailable = typeof data.total === "number" ? data.total : totalAvailable;
+      nextPageToken =
+        typeof data.nextPageToken === "string" ? data.nextPageToken : null;
+
+      const issues: RawJiraIssue[] = (data.issues || []).map(
+        (issue: Record<string, unknown>) => {
+          const f = issue.fields as Record<string, unknown>;
+          const status = f.status as Record<string, unknown>;
+          const statusCat = status?.statusCategory as Record<string, unknown>;
+          const sprintField = f.customfield_10020;
+          let sprint = "";
+          if (Array.isArray(sprintField) && sprintField.length > 0)
+            sprint =
+              ((sprintField[sprintField.length - 1] as Record<string, unknown>)
+                ?.name as string) || "";
+          return {
+            key: issue.key as string,
+            summary: (f.summary as string) || "",
+            status: (status?.name as string) || "Unknown",
+            statusCategory: (statusCat?.name as string) || "Unknown",
+            issueType:
+              ((f.issuetype as Record<string, unknown>)?.name as string) || "",
+            priority:
+              ((f.priority as Record<string, unknown>)?.name as string) ||
+              "None",
+            assignee:
+              ((f.assignee as Record<string, unknown>)?.displayName as string) ||
+              "Unassigned",
+            reporter:
+              ((f.reporter as Record<string, unknown>)?.displayName as string) ||
+              "",
+            project:
+              ((f.project as Record<string, unknown>)?.name as string) || "",
+            projectKey:
+              ((f.project as Record<string, unknown>)?.key as string) || "",
+            resolution:
+              ((f.resolution as Record<string, unknown>)?.name as string) ||
+              "Unresolved",
+            labels: (f.labels as string[]) || [],
+            components: ((f.components as Record<string, unknown>[]) || []).map(
+              (c) => c.name as string,
+            ),
+            sprint,
+            created: (f.created as string) || "",
+            updated: (f.updated as string) || "",
+            resolved: (f.resolutiondate as string) || null,
+            dueDate: (f.duedate as string) || null,
+            storyPoints: (f.customfield_10016 as number) || null,
+            timeSpent: (f.aggregatetimespent as number) || null,
+            timeEstimate: (f.timeoriginalestimate as number) || null,
+            fixVersions: ((f.fixVersions as Record<string, unknown>[]) || []).map(
+              (v) => v.name as string,
+            ),
+            epic: ((f.parent as Record<string, unknown>)?.key as string) || null,
+          };
+        },
+      );
+
+      all.push(...issues);
+      startAt += issues.length;
+      if (data.isLast === true) break;
+      if (issues.length === 0) break;
+      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+        break;
+    }
+
+    apiLogger.log("RUN_JQL", `${baseUrl}/rest/api/3/search/jql`, {
       headers: authHeaders(authToken),
-      jql,
+      jql: `${jql} | fetched=${all.length}, cap=${String(CAP)}`,
       durationMs: Date.now() - t0,
     });
-    if (!res.ok) {
-      const text = await res.text();
-      return {
-        success: false,
-        error: `Jira API error (${res.status}): ${text.substring(0, 500)}`,
-      };
-    }
-    const data = await res.json();
-    const issues = (data.issues || []).map((issue: Record<string, unknown>) => {
-      const f = issue.fields as Record<string, unknown>;
-      const status = f.status as Record<string, unknown>;
-      const statusCat = status?.statusCategory as Record<string, unknown>;
-      const sprintField = f.customfield_10020;
-      let sprint = "";
-      if (Array.isArray(sprintField) && sprintField.length > 0)
-        sprint =
-          ((sprintField[sprintField.length - 1] as Record<string, unknown>)
-            ?.name as string) || "";
-      return {
-        key: issue.key as string,
-        summary: (f.summary as string) || "",
-        status: (status?.name as string) || "Unknown",
-        statusCategory: (statusCat?.name as string) || "Unknown",
-        issueType:
-          ((f.issuetype as Record<string, unknown>)?.name as string) || "",
-        priority:
-          ((f.priority as Record<string, unknown>)?.name as string) || "None",
-        assignee:
-          ((f.assignee as Record<string, unknown>)?.displayName as string) ||
-          "Unassigned",
-        reporter:
-          ((f.reporter as Record<string, unknown>)?.displayName as string) ||
-          "",
-        project: ((f.project as Record<string, unknown>)?.name as string) || "",
-        projectKey:
-          ((f.project as Record<string, unknown>)?.key as string) || "",
-        resolution:
-          ((f.resolution as Record<string, unknown>)?.name as string) ||
-          "Unresolved",
-        labels: (f.labels as string[]) || [],
-        components: ((f.components as Record<string, unknown>[]) || []).map(
-          (c) => c.name as string,
-        ),
-        sprint,
-        created: (f.created as string) || "",
-        updated: (f.updated as string) || "",
-        resolved: (f.resolutiondate as string) || null,
-        dueDate: (f.duedate as string) || null,
-        storyPoints: (f.customfield_10016 as number) || null,
-        timeSpent: (f.aggregatetimespent as number) || null,
-        timeEstimate: (f.timeoriginalestimate as number) || null,
-        fixVersions: ((f.fixVersions as Record<string, unknown>[]) || []).map(
-          (v) => v.name as string,
-        ),
-        epic: ((f.parent as Record<string, unknown>)?.key as string) || null,
-      };
-    });
-    return { success: true, total: data.total as number, issues };
+
+    return {
+      success: true,
+      total: totalAvailable === Infinity ? all.length : totalAvailable,
+      issues: all,
+    };
   } catch (err: unknown) {
     return {
       success: false,
@@ -630,6 +865,23 @@ export async function fetchDevInfo(
   devInfo?: Record<string, DevInfo>;
   error?: string;
 }> {
+  if (shouldUseBackgroundRelay()) {
+    try {
+      return await sendBackgroundMessage<{
+        success: boolean;
+        devInfo?: Record<string, DevInfo>;
+        error?: string;
+      }>({
+        type: "FETCH_DEV_INFO",
+        baseUrl,
+        issueIds,
+        authToken,
+      });
+    } catch {
+      // Fallback to direct fetch path below.
+    }
+  }
+
   const t0 = Date.now();
   const results: Record<string, DevInfo> = {};
   const BATCH = 10;

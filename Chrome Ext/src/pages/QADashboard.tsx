@@ -41,6 +41,7 @@ const SECTION_MAP: Record<string, React.ReactNode> = {
 
 interface QADashboardInnerProps {
   onBack?: () => void;
+  onLogout?: () => Promise<void> | void;
   user?: JiraUser | null;
   authMode?: AuthMode;
   projects?: import("../types").JiraProject[];
@@ -52,6 +53,7 @@ interface QADashboardInnerProps {
 
 const QADashboardInner: React.FC<QADashboardInnerProps> = ({
   onBack,
+  onLogout,
   user,
   authMode,
   projects,
@@ -73,6 +75,7 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
     <ConfigProvider theme={antdTheme}>
       <QALayout
         onBack={onBack}
+        onLogout={onLogout}
         user={user}
         authMode={authMode}
         projects={projects}
@@ -89,6 +92,7 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
 
 interface QADashboardProps {
   onBack?: () => void;
+  onLogout?: () => Promise<void> | void;
   user?: JiraUser | null;
   authMode?: AuthMode;
   projects?: import("../types").JiraProject[];
@@ -100,6 +104,7 @@ interface QADashboardProps {
 
 const QADashboard: React.FC<QADashboardProps> = ({
   onBack,
+  onLogout,
   user,
   authMode,
   projects,
@@ -112,6 +117,7 @@ const QADashboard: React.FC<QADashboardProps> = ({
     <QueryClientProvider client={queryClient}>
       <QADashboardInner
         onBack={onBack}
+        onLogout={onLogout}
         user={user}
         authMode={authMode}
         projects={projects}

@@ -58,9 +58,13 @@ function StatCard({
     if (diff !== 0) {
       const isUp = diff > 0;
       const isBad = higherIsBad ? isUp : !isUp;
+      const pct =
+        prev > 0 ? Math.round((Math.abs(diff) / prev) * 100) : null;
+      const pctText =
+        pct === null ? "(from 0)" : `(${isUp ? "+" : "-"}${pct}%)`;
       trendEl = (
         <div className={`stat-trend trend-${isBad ? "bad" : "good"}`}>
-          {isUp ? "↑" : "↓"} {Math.abs(diff)} vs prev
+          {isUp ? "↑" : "↓"} {Math.abs(diff)} {pctText} vs prev
         </div>
       );
     }

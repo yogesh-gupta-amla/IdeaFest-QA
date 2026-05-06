@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useApp } from "./context/AppContext";
 import QADashboard from "./pages/QADashboard";
-import { storageGet, storageSet } from "./services/chromeStorage";
+import {
+  storageGet,
+  storageRemove,
+  storageRemoveByPrefix,
+  storageSet,
+} from "./services/chromeStorage";
 import {
   validateAuth,
   fetchProjects,
@@ -547,6 +552,40 @@ export default function App() {
           projects={projects}
           selectedProjectKey={selectedProjectKey}
           onLoadProject={handleLoadProject}
+          onLogout={async () => {
+            // Clear persisted auth + cached data
+            await storageRemove([
+              "jiraUrl",
+              "jiraEmail",
+              "jiraTokenB64",
+              "authMode",
+              "lastProjectKey",
+              "lastProjectName",
+              "manualEntries",
+              "qaNotes",
+              "dsrRecipient",
+            ]);
+            await storageRemoveByPrefix(["snap_"]);
+
+            // Reset in-memory auth + dashboard state
+            setAuthMode("none");
+            setAuthToken(null);
+            setUser(null);
+            setProjects([]);
+            setSelectedProjectKey("");
+            setSelectedProjectName("");
+            setMetrics(null);
+            setPrevMetrics(null);
+            setManualEntries([]);
+            setQaNotes([]);
+            setDsrRecipient("");
+            setPendingProject(null);
+
+            useDashboardStore.getState().resetForLogout();
+
+            setShowQADashboard(false);
+            showToast("Logged out", "success");
+          }}
           onTimeRangeChange={handleTimeRangeChange}
           onRefresh={() => {
             if (selectedProjectKey && selectedProjectName) {

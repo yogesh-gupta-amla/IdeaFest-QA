@@ -44,18 +44,27 @@ export default function LoadingOverlay({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Track which step we're on based on the loading text
-  const currentStep = QUERY_STEPS.findIndex((s) =>
+  const currentStepFromText = QUERY_STEPS.findIndex((s) =>
     text.toLowerCase().includes(s.toLowerCase()),
   );
-  const completedSteps = currentStep >= 0 ? currentStep : 0;
+  const currentStepFromLabel =
+    progress?.label
+      ? QUERY_STEPS.findIndex((s) =>
+          progress.label.toLowerCase().includes(s.toLowerCase()),
+        )
+      : -1;
+  const currentStepRaw =
+    currentStepFromText >= 0 ? currentStepFromText : currentStepFromLabel;
+  const currentStep = Math.max(0, Math.min(QUERY_STEPS.length - 1, currentStepRaw));
+  const completedSteps = currentStep;
   const totalSteps = QUERY_STEPS.length;
-  const overallPct = Math.round(
-    ((completedSteps +
-      (progress && progress.total > 0
-        ? progress.fetched / progress.total
-        : 0)) /
-      totalSteps) *
-      100,
+  const stepFraction =
+    progress && progress.total > 0
+      ? Math.max(0, Math.min(1, progress.fetched / progress.total))
+      : 0;
+  const overallPct = Math.max(
+    0,
+    Math.min(100, Math.round(((completedSteps + stepFraction) / totalSteps) * 100)),
   );
 
   useEffect(() => {
@@ -85,7 +94,10 @@ export default function LoadingOverlay({
 
   const pagePct =
     progress && progress.total > 0
-      ? Math.round((progress.fetched / progress.total) * 100)
+      ? Math.max(
+          0,
+          Math.min(100, Math.round((progress.fetched / progress.total) * 100)),
+        )
       : 0;
 
   const mins = Math.floor(elapsed / 60);

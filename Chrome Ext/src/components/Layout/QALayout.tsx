@@ -27,6 +27,8 @@ import {
   ChevronLeft,
   Palette,
   Timer,
+  LogOut,
+  KeyRound,
   Wifi,
   WifiOff,
   Menu,
@@ -37,6 +39,7 @@ const { Content } = Layout;
 interface QALayoutProps {
   children: React.ReactNode;
   onBack?: () => void;
+  onLogout?: () => Promise<void> | void;
   user?: JiraUser | null;
   authMode?: AuthMode;
   projects?: JiraProject[];
@@ -247,6 +250,7 @@ const NavItem: React.FC<{
 const QALayout: React.FC<QALayoutProps> = ({
   children,
   onBack,
+  onLogout,
   user,
   authMode,
   projects = [],
@@ -516,11 +520,16 @@ const QALayout: React.FC<QALayoutProps> = ({
                       {user.displayName}
                     </div>
                     <div className="flex items-center gap-1 mt-0.5">
-                      {authMode === "session" ? (
-                        <Wifi size={9} style={{ color: "var(--qa-success)" }} />
+                      {authMode === "token" ? (
+                        <KeyRound
+                          size={10}
+                          style={{ color: "var(--qa-success)" }}
+                        />
+                      ) : authMode === "session" ? (
+                        <Wifi size={10} style={{ color: "var(--qa-success)" }} />
                       ) : (
                         <WifiOff
-                          size={9}
+                          size={10}
                           style={{ color: "var(--qa-text-muted)" }}
                         />
                       )}
@@ -528,7 +537,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                         className="text-[10px]"
                         style={{
                           color:
-                            authMode === "session"
+                            authMode === "session" || authMode === "token"
                               ? "var(--qa-success)"
                               : "var(--qa-text-muted)",
                         }}
@@ -561,6 +570,38 @@ const QALayout: React.FC<QALayoutProps> = ({
             )}
           </div>
         </div>
+
+        {/* -- Logout -- */}
+        {user && onLogout && (
+          <button
+            onClick={() => void onLogout()}
+            title={collapsed ? "Logout" : undefined}
+            className="relative flex-shrink-0 flex items-center gap-2 mx-3 mb-3 px-3 py-2 text-xs font-medium rounded-xl transition-all duration-200"
+            style={{
+              background:
+                "color-mix(in srgb, var(--qa-bg-secondary) 60%, transparent)",
+              border: "1px solid var(--qa-border)",
+              color: "var(--qa-text-muted)",
+              cursor: "pointer",
+              justifyContent: collapsed ? "center" : "flex-start",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color =
+                "var(--qa-accent)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                "color-mix(in srgb, var(--qa-accent) 35%, transparent)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color =
+                "var(--qa-text-muted)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                "var(--qa-border)";
+            }}
+          >
+            <LogOut size={13} />
+            {!collapsed && " Logout"}
+          </button>
+        )}
 
         {/* -- Back link -- */}
         {onBack && (
@@ -827,7 +868,7 @@ const QALayout: React.FC<QALayoutProps> = ({
                   border: "1px solid var(--qa-accent-hover)",
                 }}
               >
-                {authMode === "session" ? "?? Session" : "?? Token"}
+                {authMode === "session" ? "Session" : "Token"}
               </span>
             )}
           </div>

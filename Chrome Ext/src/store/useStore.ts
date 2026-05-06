@@ -49,6 +49,7 @@ interface DashboardStore {
   ) => void;
   setSprintInfo: (sprintName: string, sprintGoal: string) => void;
   setJiraConfig: (url: string, token: string | null, mode: AuthMode) => void;
+  resetForLogout: () => void;
 }
 
 const defaultFilters: DashboardFilters = {
@@ -118,4 +119,28 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
 
   setJiraConfig: (url, token, mode) =>
     set({ jiraUrl: url, authToken: token, authMode: mode }),
+
+  resetForLogout: () =>
+    set({
+      activeSection: "health",
+      projectKey: "",
+      projectName: "",
+      projectMetrics: null,
+      prevProjectMetrics: null,
+      sprintName: "",
+      sprintGoal: "",
+      jiraUrl: "",
+      authToken: null,
+      authMode: "none",
+      rawIssues: [],
+      recentlyResolved: [],
+      ageingIssues: [],
+      activeIssues: [],
+      overburntIssues: [],
+      earlyCompletionIssues: [],
+      codeIntelIssues: [],
+      projectDataLoaded: false,
+      filters: defaultFilters,
+      dateRange: null,
+    }),
 }));

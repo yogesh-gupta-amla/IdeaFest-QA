@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
 
 const JIRA_PROXY_PREFIX = "/jira-proxy";
 
@@ -101,7 +102,17 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
+      input: {
+        app: resolve(__dirname, "index.html"),
+        background: resolve(__dirname, "src/background.ts"),
+      },
       output: {
+        entryFileNames: (chunkInfo) =>
+          chunkInfo.name === "background"
+            ? "background.js"
+            : "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
         manualChunks: {
           "vendor-react": ["react", "react-dom"],
           "vendor-charts": ["recharts"],

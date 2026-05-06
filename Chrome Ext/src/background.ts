@@ -54,6 +54,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       message.startAt || 0,
       message.pageSize || 100,
       message.authToken,
+      message.nextPageToken || null,
     ).then(sendResponse);
     return true;
   }
@@ -387,6 +388,7 @@ async function fetchJiraPage(
   startAt: number,
   pageSize: number,
   authToken: string | null,
+  nextPageToken: string | null = null,
 ) {
   try {
     const fields = [
@@ -425,8 +427,9 @@ async function fetchJiraPage(
       maxResults: String(pageSize),
       fields,
       expand: "changelog",
-      startAt: String(startAt),
     });
+    if (nextPageToken) params.set("nextPageToken", nextPageToken);
+    else params.set("startAt", String(startAt)); // fallback
     const res = await fetch(
       `${baseUrl}/rest/api/3/search/jql?${params}`,
       fetchOpts,
@@ -439,10 +442,17 @@ async function fetchJiraPage(
       };
     }
     const data = await res.json();
-    const total = data.total ?? 0;
+    const total = typeof data.total === "number" ? data.total : 0;
     const rawIssues: Record<string, unknown>[] = data.issues || [];
     const nextStartAt = startAt + rawIssues.length;
-    const isLast = rawIssues.length === 0 || nextStartAt >= total;
+    const responseNextToken =
+      typeof data.nextPageToken === "string" ? data.nextPageToken : null;
+    const isLast =
+      data.isLast === true
+        ? true
+        : responseNextToken
+          ? false
+          : rawIssues.length === 0 || nextStartAt >= total;
 
     // Re-use the same issue mapping as fetchJiraIssues
     const issues = rawIssues.map((issue: Record<string, unknown>) => {
@@ -560,7 +570,14 @@ async function fetchJiraPage(
       };
     });
 
-    return { success: true, issues, total, startAt: nextStartAt, isLast };
+    return {
+      success: true,
+      issues,
+      total,
+      startAt: nextStartAt,
+      isLast,
+      nextPageToken: responseNextToken,
+    };
   } catch (err: unknown) {
     return {
       success: false,
@@ -599,24 +616,47 @@ async function runJqlQuery(
       "parent",
       "subtasks",
     ].join(",");
-    const params = new URLSearchParams({
-      jql,
-      maxResults: String(maxResults),
-      fields,
-    });
-    const res = await fetch(
-      `${baseUrl}/rest/api/3/search/jql?${params.toString()}`,
-      buildFetchOptions(authToken),
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return {
-        success: false,
-        error: `Jira API error (${res.status}): ${text.substring(0, 500)}`,
-      };
+    const CAP = maxResults <= 0 ? Infinity : maxResults;
+    const PAGE_SIZE = 100;
+    const all: Record<string, unknown>[] = [];
+    let startAt = 0;
+    let totalAvailable = Infinity;
+    let nextPageToken: string | null = null;
+
+    while (startAt < totalAvailable && all.length < CAP) {
+      const params = new URLSearchParams({
+        jql,
+        maxResults: String(Math.min(PAGE_SIZE, CAP - all.length)),
+        fields,
+      });
+      if (nextPageToken) params.set("nextPageToken", nextPageToken);
+      else params.set("startAt", String(startAt)); // fallback
+      const res = await fetch(
+        `${baseUrl}/rest/api/3/search/jql?${params.toString()}`,
+        buildFetchOptions(authToken),
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        return {
+          success: false,
+          error: `Jira API error (${res.status}): ${text.substring(0, 500)}`,
+        };
+      }
+      const data = await res.json();
+      totalAvailable =
+        typeof data.total === "number" ? data.total : totalAvailable;
+      nextPageToken =
+        typeof data.nextPageToken === "string" ? data.nextPageToken : null;
+      const pageIssues: Record<string, unknown>[] = data.issues || [];
+      all.push(...pageIssues);
+      if (data.isLast === true) break;
+      if (pageIssues.length === 0) break;
+      startAt += pageIssues.length;
+      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+        break;
     }
-    const data = await res.json();
-    const issues = (data.issues || []).map((issue: Record<string, unknown>) => {
+
+    const issues = all.map((issue: Record<string, unknown>) => {
       const f = issue.fields as Record<string, unknown>;
       const status = f.status as Record<string, unknown>;
       const statusCat = status?.statusCategory as Record<string, unknown>;
@@ -666,7 +706,12 @@ async function runJqlQuery(
         epic: ((f.parent as Record<string, unknown>)?.key as string) || null,
       };
     });
-    return { success: true, total: data.total as number, issues };
+
+    return {
+      success: true,
+      total: totalAvailable === Infinity ? issues.length : totalAvailable,
+      issues,
+    };
   } catch (err: unknown) {
     return {
       success: false,

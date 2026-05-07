@@ -6,6 +6,36 @@ import { storageGet } from "./chromeStorage";
 // Example: const HARDCODED_GEMINI_API_KEY = "AIza...";
 const HARDCODED_GEMINI_API_KEY = "AIzaSyAA2AYhUeFMkmztXvFTMBbmbFsalmdSf34"; // <-- paste your key here if you insist on hardcoding
 
+// Relay calls through background service worker to avoid CORS in the extension.
+function shouldUseExtensionRelay(): boolean {
+  return (
+    typeof chrome !== "undefined" &&
+    !!chrome.runtime?.id &&
+    typeof chrome.runtime.sendMessage === "function"
+  );
+}
+
+function sendBackgroundMessage<T>(
+  message: Record<string, unknown>,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response: T) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+      if (response === undefined || response === null) {
+        reject(
+          new Error("No response from extension background service worker"),
+        );
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
 export interface CallGeminiOptions {
   apiKey?: string;
   // single model name or prioritized list (first = preferred)
@@ -33,8 +63,8 @@ export async function callGemini(
   const modelsToTry: string[] = Array.isArray(opts.model)
     ? opts.model
     : typeof opts.model === "string"
-    ? [opts.model]
-    : DEFAULT_MODELS.slice();
+      ? [opts.model]
+      : DEFAULT_MODELS.slice();
   let apiKey = opts.apiKey;
 
   // If a hardcoded key is present (developer opted in), prefer it.
@@ -92,10 +122,13 @@ export async function callGemini(
   // Simple retry logic: try up to 3 times per model for transient network/abort errors.
   const maxAttempts = 3;
   let lastError: any = null;
-  
+
   // Quick offline check
   try {
-    if (typeof navigator !== "undefined" && (navigator as any).onLine === false) {
+    if (
+      typeof navigator !== "undefined" &&
+      (navigator as any).onLine === false
+    ) {
       throw new Error("Network appears offline (navigator.onLine === false)");
     }
   } catch {
@@ -113,34 +146,70 @@ export async function callGemini(
 
     while (attempt < maxAttempts) {
       attempt += 1;
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutDefault);
 
       try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-goog-api-key": apiKey,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+        let text: string;
 
-        clearTimeout(id);
+        if (shouldUseExtensionRelay()) {
+          // In the deployed extension, relay through background service worker
+          // so the request is made from background context (no CORS restriction).
+          const bgResponse = await sendBackgroundMessage<{
+            success: boolean;
+            text?: string;
+            error?: string;
+          }>({
+            type: "CALL_GEMINI",
+            url,
+            apiKey,
+            body,
+          });
 
-        const text = await res.text();
-
-        if (!res.ok) {
-          // If rate-limited or server busy, mark to fallback to next model.
-          if (res.status === 429 || res.status === 503 || /RESOURCE_EXHAUSTED/i.test(text)) {
-            // eslint-disable-next-line no-console
-            console.warn(`Model ${modelName} returned ${res.status}; falling back to next model if available.`);
-            shouldFallbackToNextModel = true;
-            break; // stop retrying this model and try next
+          if (!bgResponse.success) {
+            const errMsg = bgResponse.error ?? "Gemini background relay failed";
+            if (/429|503|RESOURCE_EXHAUSTED/i.test(errMsg)) {
+              console.warn(
+                `Model ${modelName} returned rate-limit via relay; falling back to next model.`,
+              );
+              shouldFallbackToNextModel = true;
+              break;
+            }
+            throw new Error(errMsg);
           }
-
-          throw new Error(`Gemini API error ${res.status}: ${text}`);
+          text = bgResponse.text ?? "";
+        } else {
+          // Dev / non-extension path: direct fetch
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), timeoutDefault);
+          try {
+            const res = await fetch(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-goog-api-key": apiKey,
+              },
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            });
+            clearTimeout(id);
+            text = await res.text();
+            if (!res.ok) {
+              if (
+                res.status === 429 ||
+                res.status === 503 ||
+                /RESOURCE_EXHAUSTED/i.test(text)
+              ) {
+                console.warn(
+                  `Model ${modelName} returned ${res.status}; falling back to next model if available.`,
+                );
+                shouldFallbackToNextModel = true;
+                break;
+              }
+              throw new Error(`Gemini API error ${res.status}: ${text}`);
+            }
+          } catch (fetchErr: any) {
+            clearTimeout(id);
+            throw fetchErr;
+          }
         }
 
         try {
@@ -155,7 +224,9 @@ export async function callGemini(
             json?.candidates?.[0]?.content?.parts?.[0]?.text ??
             // content.parts may have multiple parts
             (json?.candidates?.[0]?.content?.parts
-              ? json?.candidates?.[0]?.content?.parts.map((p: any) => p.text).join("\n")
+              ? json?.candidates?.[0]?.content?.parts
+                  .map((p: any) => p.text)
+                  .join("\n")
               : undefined) ??
             // older shape: output
             json?.candidates?.[0]?.output ??
@@ -164,7 +235,9 @@ export async function callGemini(
             json?.results?.[0]?.content?.[0]?.text ??
             // fallback: candidates[].content may be an array of objects with .text
             (Array.isArray(json?.candidates?.[0]?.content)
-              ? json?.candidates?.[0]?.content.map((c: any) => c.text).join("\n")
+              ? json?.candidates?.[0]?.content
+                  .map((c: any) => c.text)
+                  .join("\n")
               : undefined) ??
             null;
 
@@ -174,18 +247,25 @@ export async function callGemini(
           return text;
         }
       } catch (err: any) {
-        clearTimeout(id);
         lastError = err;
 
         const errName = err && err.name ? err.name : "Error";
         const errMsg = err && err.message ? err.message : String(err);
         // Log details for diagnostics
         // eslint-disable-next-line no-console
-        console.warn(`Gemini request attempt ${attempt} for model ${modelName} failed: ${errName}: ${errMsg}`);
+        console.warn(
+          `Gemini request attempt ${attempt} for model ${modelName} failed: ${errName}: ${errMsg}`,
+        );
 
         // If this was an abort (timeout) or a network error, retry with backoff.
-        const isAbort = err && (err.name === "AbortError" || (typeof DOMException !== 'undefined' && err instanceof (DOMException as any) && err.name === 'AbortError'));
-        const isNetwork = err && (err instanceof TypeError || /network/i.test(errMsg));
+        const isAbort =
+          err &&
+          (err.name === "AbortError" ||
+            (typeof DOMException !== "undefined" &&
+              err instanceof (DOMException as any) &&
+              err.name === "AbortError"));
+        const isNetwork =
+          err && (err instanceof TypeError || /network/i.test(errMsg));
 
         if (attempt < maxAttempts && (isAbort || isNetwork)) {
           // small backoff before retrying

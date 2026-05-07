@@ -1,6 +1,10 @@
 import type { JiraIssue, JiraUser, JiraProject } from "../types";
 import { apiLogger } from "../utils/apiLogger";
 
+const PRODUCTION_JIRA_PROXY_PREFIX = (
+  import.meta.env.VITE_JIRA_PROXY_PREFIX || "/jira-proxy"
+).trim();
+
 function shouldUseDevProxy(): boolean {
   if (typeof window === "undefined") return false;
   return (
@@ -9,10 +13,27 @@ function shouldUseDevProxy(): boolean {
   );
 }
 
+function normalizeProxyPrefix(prefix: string): string {
+  if (!prefix) return "";
+  const withLeadingSlash = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
+function getJiraProxyPrefix(): string | null {
+  if (shouldUseDevProxy()) return "/jira-proxy";
+  const normalized = normalizeProxyPrefix(PRODUCTION_JIRA_PROXY_PREFIX);
+  return normalized || null;
+}
+
+function shouldUseJiraProxy(): boolean {
+  return !!getJiraProxyPrefix();
+}
+
 function toRequestUrl(baseUrl: string, url: string): string {
-  if (!shouldUseDevProxy()) return url;
+  const proxyPrefix = getJiraProxyPrefix();
+  if (!proxyPrefix) return url;
   const parsed = new URL(url);
-  return `/jira-proxy${parsed.pathname}${parsed.search}`;
+  return `${proxyPrefix}${parsed.pathname}${parsed.search}`;
 }
 
 function buildFetchOptions(
@@ -21,7 +42,7 @@ function buildFetchOptions(
 ): RequestInit {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (authToken) headers["Authorization"] = `Basic ${authToken}`;
-  if (shouldUseDevProxy()) headers["x-jira-base-url"] = baseUrl;
+  if (shouldUseJiraProxy()) headers["x-jira-base-url"] = baseUrl;
   const opts: RequestInit = { method: "GET", headers };
   if (!authToken) opts.credentials = "include";
   return opts;
@@ -40,6 +61,12 @@ function shouldUseBackgroundRelay(): boolean {
     !!chrome.runtime?.id &&
     typeof chrome.runtime.sendMessage === "function"
   );
+}
+
+function getHostedWebCorsError(): string | null {
+  if (typeof window === "undefined") return null;
+  if (shouldUseBackgroundRelay() || shouldUseJiraProxy()) return null;
+  return "Jira Cloud blocks direct browser calls from deployed websites due to CORS. Use a same-origin backend proxy route (default: /jira-proxy) and set VITE_JIRA_PROXY_PREFIX only if your proxy path is different.";
 }
 
 function sendBackgroundMessage<T>(
@@ -283,14 +310,14 @@ export async function fetchAllPages(
       while (!isLast) {
         const page: FetchJiraPageResponse =
           await sendBackgroundMessage<FetchJiraPageResponse>({
-          type: "FETCH_JIRA_PAGE",
-          baseUrl,
-          jql,
-          startAt,
-          nextPageToken,
-          pageSize,
-          authToken,
-        });
+            type: "FETCH_JIRA_PAGE",
+            baseUrl,
+            jql,
+            startAt,
+            nextPageToken,
+            pageSize,
+            authToken,
+          });
 
         if (!page.success) {
           return {
@@ -301,15 +328,21 @@ export async function fetchAllPages(
 
         const pageIssues = page.issues || [];
         allIssues.push(...pageIssues);
-        total = page.total ?? total;
+        total = page.total || total;
         nextPageToken =
           typeof page.nextPageToken === "string" ? page.nextPageToken : null;
-        isLast = !!page.isLast || (nextPageToken === null && pageIssues.length === 0);
+        isLast =
+          !!page.isLast || (nextPageToken === null && pageIssues.length === 0);
         // If token-based pagination is used, we keep startAt for progress only.
         // Otherwise we advance by startAt.
         startAt = page.startAt ?? startAt + pageIssues.length;
 
-        if (onProgress) onProgress(allIssues.length, total, label);
+        if (onProgress)
+          onProgress(
+            allIssues.length,
+            Math.max(allIssues.length, total),
+            label,
+          );
         if (pageIssues.length === 0) break;
       }
 
@@ -317,6 +350,11 @@ export async function fetchAllPages(
     } catch {
       // Fallback to direct fetch path below.
     }
+  }
+
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
   }
 
   const allIssues: JiraIssue[] = [];
@@ -370,12 +408,13 @@ export async function fetchAllPages(
       });
 
       allIssues.push(...pageIssues);
-      total = pageTotal || total || allIssues.length;
+      total = pageTotal || total;
       isLast = pageIsLast;
       nextPageToken = responseNextToken;
       startAt = nextStartAt;
 
-      if (onProgress) onProgress(allIssues.length, total, label);
+      if (onProgress)
+        onProgress(allIssues.length, Math.max(allIssues.length, total), label);
       if (pageIssues.length === 0) break;
     } catch (err: unknown) {
       return {
@@ -406,6 +445,11 @@ export async function validateAuth(
     } catch {
       // Fallback to direct fetch path below.
     }
+  }
+
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
   }
 
   const url = `${baseUrl}/rest/api/3/myself`;
@@ -459,6 +503,11 @@ export async function fetchProjects(
     } catch {
       // Fallback to direct fetch path below.
     }
+  }
+
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
   }
 
   const url = `${baseUrl}/rest/api/3/project/search?maxResults=100&orderBy=name&status=live`;
@@ -525,6 +574,11 @@ export async function fetchJiraIssues(
     }
   }
 
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
+  }
+
   const fetchAll = maxResults <= 0;
   const PAGE_SIZE = fetchAll ? 100 : Math.min(maxResults, 100);
   const CAP = fetchAll ? Infinity : maxResults;
@@ -562,7 +616,8 @@ export async function fetchJiraIssues(
         };
       }
       const data = await res.json();
-      totalAvailable = typeof data.total === "number" ? data.total : totalAvailable;
+      totalAvailable =
+        typeof data.total === "number" ? data.total : totalAvailable;
       nextPageToken =
         typeof data.nextPageToken === "string" ? data.nextPageToken : null;
       const pageIssues: JiraIssue[] = (data.issues || []).map(mapIssue);
@@ -570,7 +625,11 @@ export async function fetchJiraIssues(
       if (data.isLast === true) break;
       if (pageIssues.length === 0) break;
       startAt += pageIssues.length;
-      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+      if (
+        !nextPageToken &&
+        totalAvailable !== Infinity &&
+        startAt >= totalAvailable
+      )
         break;
     }
     return {
@@ -612,6 +671,11 @@ export async function fetchActiveSprint(
     } catch {
       // Fallback to direct fetch path below.
     }
+  }
+
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
   }
 
   try {
@@ -708,6 +772,11 @@ export async function runJqlQuery(
     }
   }
 
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
+  }
+
   try {
     const CAP = maxResults <= 0 ? Infinity : maxResults;
     const PAGE_SIZE = 100;
@@ -748,7 +817,8 @@ export async function runJqlQuery(
       }
 
       const data = await res.json();
-      totalAvailable = typeof data.total === "number" ? data.total : totalAvailable;
+      totalAvailable =
+        typeof data.total === "number" ? data.total : totalAvailable;
       nextPageToken =
         typeof data.nextPageToken === "string" ? data.nextPageToken : null;
 
@@ -774,11 +844,11 @@ export async function runJqlQuery(
               ((f.priority as Record<string, unknown>)?.name as string) ||
               "None",
             assignee:
-              ((f.assignee as Record<string, unknown>)?.displayName as string) ||
-              "Unassigned",
+              ((f.assignee as Record<string, unknown>)
+                ?.displayName as string) || "Unassigned",
             reporter:
-              ((f.reporter as Record<string, unknown>)?.displayName as string) ||
-              "",
+              ((f.reporter as Record<string, unknown>)
+                ?.displayName as string) || "",
             project:
               ((f.project as Record<string, unknown>)?.name as string) || "",
             projectKey:
@@ -798,10 +868,11 @@ export async function runJqlQuery(
             storyPoints: (f.customfield_10016 as number) || null,
             timeSpent: (f.aggregatetimespent as number) || null,
             timeEstimate: (f.timeoriginalestimate as number) || null,
-            fixVersions: ((f.fixVersions as Record<string, unknown>[]) || []).map(
-              (v) => v.name as string,
-            ),
-            epic: ((f.parent as Record<string, unknown>)?.key as string) || null,
+            fixVersions: (
+              (f.fixVersions as Record<string, unknown>[]) || []
+            ).map((v) => v.name as string),
+            epic:
+              ((f.parent as Record<string, unknown>)?.key as string) || null,
           };
         },
       );
@@ -810,7 +881,11 @@ export async function runJqlQuery(
       startAt += issues.length;
       if (data.isLast === true) break;
       if (issues.length === 0) break;
-      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+      if (
+        !nextPageToken &&
+        totalAvailable !== Infinity &&
+        startAt >= totalAvailable
+      )
         break;
     }
 
@@ -880,6 +955,11 @@ export async function fetchDevInfo(
     } catch {
       // Fallback to direct fetch path below.
     }
+  }
+
+  const hostedWebCorsError = getHostedWebCorsError();
+  if (hostedWebCorsError) {
+    return { success: false, error: hostedWebCorsError };
   }
 
   const t0 = Date.now();

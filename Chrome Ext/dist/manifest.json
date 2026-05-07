@@ -23,7 +23,8 @@
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "https://*.atlassian.net/*",
-    "https://amla.atlassian.net/*"
+    "https://amla.atlassian.net/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "web_accessible_resources": [
     {

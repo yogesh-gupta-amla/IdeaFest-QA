@@ -47,15 +47,17 @@ export default function LoadingOverlay({
   const currentStepFromText = QUERY_STEPS.findIndex((s) =>
     text.toLowerCase().includes(s.toLowerCase()),
   );
-  const currentStepFromLabel =
-    progress?.label
-      ? QUERY_STEPS.findIndex((s) =>
-          progress.label.toLowerCase().includes(s.toLowerCase()),
-        )
-      : -1;
+  const currentStepFromLabel = progress?.label
+    ? QUERY_STEPS.findIndex((s) =>
+        progress.label.toLowerCase().includes(s.toLowerCase()),
+      )
+    : -1;
   const currentStepRaw =
     currentStepFromText >= 0 ? currentStepFromText : currentStepFromLabel;
-  const currentStep = Math.max(0, Math.min(QUERY_STEPS.length - 1, currentStepRaw));
+  const currentStep = Math.max(
+    0,
+    Math.min(QUERY_STEPS.length - 1, currentStepRaw),
+  );
   const completedSteps = currentStep;
   const totalSteps = QUERY_STEPS.length;
   const stepFraction =
@@ -64,7 +66,10 @@ export default function LoadingOverlay({
       : 0;
   const overallPct = Math.max(
     0,
-    Math.min(100, Math.round(((completedSteps + stepFraction) / totalSteps) * 100)),
+    Math.min(
+      100,
+      Math.round(((completedSteps + stepFraction) / totalSteps) * 100),
+    ),
   );
 
   useEffect(() => {
@@ -209,7 +214,8 @@ export default function LoadingOverlay({
               />
             </div>
             <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
-              {progress.label}: {progress.fetched.toLocaleString()} /{" "}
+              {progress.label}:{" "}
+              {Math.min(progress.fetched, progress.total).toLocaleString()} /{" "}
               {progress.total.toLocaleString()} ({pagePct}%)
             </p>
           </div>

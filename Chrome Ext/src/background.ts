@@ -58,7 +58,42 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     ).then(sendResponse);
     return true;
   }
+  if (message.type === "CALL_GEMINI") {
+    callGeminiBackground(
+      message.url as string,
+      message.apiKey as string,
+      message.body as Record<string, unknown>,
+    ).then(sendResponse);
+    return true;
+  }
 });
+
+async function callGeminiBackground(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+): Promise<{ success: boolean; text?: string; error?: string }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `Gemini API error ${res.status}: ${text}`,
+      };
+    }
+    return { success: true, text };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
 
 function buildFetchOptions(authToken: string | null): RequestInit {
   const opts: RequestInit = {
@@ -652,7 +687,11 @@ async function runJqlQuery(
       if (data.isLast === true) break;
       if (pageIssues.length === 0) break;
       startAt += pageIssues.length;
-      if (!nextPageToken && totalAvailable !== Infinity && startAt >= totalAvailable)
+      if (
+        !nextPageToken &&
+        totalAvailable !== Infinity &&
+        startAt >= totalAvailable
+      )
         break;
     }
 

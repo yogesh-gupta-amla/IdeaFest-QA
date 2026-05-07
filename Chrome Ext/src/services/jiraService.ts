@@ -33,7 +33,11 @@ function toRequestUrl(baseUrl: string, url: string): string {
   const proxyPrefix = getJiraProxyPrefix();
   if (!proxyPrefix) return url;
   const parsed = new URL(url);
-  return `${proxyPrefix}${parsed.pathname}${parsed.search}`;
+  const params = new URLSearchParams(parsed.searchParams);
+  // Header forwarding can be stripped by some hosts, so keep base URL as fallback.
+  params.set("jiraBaseUrl", baseUrl);
+  const query = params.toString();
+  return `${proxyPrefix}${parsed.pathname}${query ? `?${query}` : ""}`;
 }
 
 function buildFetchOptions(
@@ -41,8 +45,17 @@ function buildFetchOptions(
   baseUrl: string,
 ): RequestInit {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (authToken) headers["Authorization"] = `Basic ${authToken}`;
-  if (shouldUseJiraProxy()) headers["x-jira-base-url"] = baseUrl;
+  const useProxy = shouldUseJiraProxy();
+  const useDevProxy = shouldUseDevProxy();
+  if (authToken) {
+    if (useProxy && !useDevProxy) {
+      // Some managed hosts reject Authorization header on site endpoints.
+      headers["x-jira-authorization"] = `Basic ${authToken}`;
+    } else {
+      headers["Authorization"] = `Basic ${authToken}`;
+    }
+  }
+  if (useProxy) headers["x-jira-base-url"] = baseUrl;
   const opts: RequestInit = { method: "GET", headers };
   if (!authToken) opts.credentials = "include";
   return opts;

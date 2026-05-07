@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,10 +8,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, "dist");
 
+loadEnvFiles();
+
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 4173);
 const JIRA_PROXY_PREFIX = normalizeProxyPrefix(
-  process.env.JIRA_PROXY_PREFIX || "/jira-proxy",
+  process.env.JIRA_PROXY_PREFIX ||
+    process.env.VITE_JIRA_PROXY_PREFIX ||
+    "/jira-proxy",
 );
 
 const MIME_TYPES = {
@@ -30,6 +34,47 @@ const MIME_TYPES = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
+
+function loadEnvFiles() {
+  const envFiles = [
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.production.local",
+  ];
+  for (const file of envFiles) {
+    const filePath = path.join(__dirname, file);
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      applyEnvFile(content);
+    } catch {
+      // Ignore missing env files.
+    }
+  }
+}
+
+function applyEnvFile(content) {
+  const lines = content.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex <= 0) continue;
+
+    const key = line.slice(0, equalsIndex).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (process.env[key] !== undefined) continue;
+
+    let value = line.slice(equalsIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
 
 function normalizeProxyPrefix(prefix) {
   if (!prefix) return "/jira-proxy";
@@ -68,7 +113,10 @@ function writeJson(res, status, payload) {
 }
 
 async function proxyJiraRequest(req, res, requestUrl) {
-  const baseUrl = getHeaderValue(req.headers["x-jira-base-url"]);
+  const baseUrl =
+    getHeaderValue(req.headers["x-jira-base-url"]) ||
+    requestUrl.searchParams.get("jiraBaseUrl") ||
+    "";
   if (!baseUrl) {
     writeJson(res, 400, {
       error: "Missing x-jira-base-url header",
@@ -85,8 +133,11 @@ async function proxyJiraRequest(req, res, requestUrl) {
 
   const jiraOrigin = new URL(baseUrl).origin;
   const proxyPath = requestUrl.pathname.slice(JIRA_PROXY_PREFIX.length) || "/";
+  const upstreamParams = new URLSearchParams(requestUrl.searchParams);
+  upstreamParams.delete("jiraBaseUrl");
+  const upstreamQuery = upstreamParams.toString();
   const targetUrl = new URL(
-    `${proxyPath}${requestUrl.search}`,
+    `${proxyPath}${upstreamQuery ? `?${upstreamQuery}` : ""}`,
     `${jiraOrigin}/`,
   );
 
@@ -100,11 +151,22 @@ async function proxyJiraRequest(req, res, requestUrl) {
       lower === "referer" ||
       lower === "content-length" ||
       lower === "x-jira-base-url" ||
+      lower === "x-jira-authorization" ||
       lower === "connection"
     ) {
       continue;
     }
     headers.set(key, Array.isArray(value) ? value.join(",") : value);
+  }
+
+  const proxiedAuthorization = getHeaderValue(
+    req.headers["x-jira-authorization"],
+  );
+  if (proxiedAuthorization) {
+    headers.set("authorization", proxiedAuthorization);
+  }
+  if (!headers.has("accept")) {
+    headers.set("accept", "application/json");
   }
 
   const method = (req.method || "GET").toUpperCase();

@@ -4,6 +4,9 @@ import { apiLogger } from "../utils/apiLogger";
 const PRODUCTION_JIRA_PROXY_PREFIX = (
   import.meta.env.VITE_JIRA_PROXY_PREFIX || "/jira-proxy"
 ).trim();
+const ENABLE_PROXY_QUERY_FALLBACK =
+  String(import.meta.env.VITE_JIRA_PROXY_QUERY_FALLBACK || "").toLowerCase() ===
+  "true";
 
 function shouldUseDevProxy(): boolean {
   if (typeof window === "undefined") return false;
@@ -34,7 +37,7 @@ function toRequestUrl(baseUrl: string, url: string): string {
   if (!proxyPrefix) return url;
   const parsed = new URL(url);
   const params = new URLSearchParams(parsed.searchParams);
-  if (!shouldUseDevProxy()) {
+  if (!shouldUseDevProxy() && ENABLE_PROXY_QUERY_FALLBACK) {
     // Header forwarding can be stripped by some hosts, so keep base URL as fallback.
     params.set("jiraBaseUrl", baseUrl);
   }

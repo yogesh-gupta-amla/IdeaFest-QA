@@ -27,10 +27,16 @@ export default defineConfig({
             return;
           }
 
+          const parsedRequestUrl = new URL(requestUrl, "http://localhost");
+
           const baseHeader = req.headers["x-jira-base-url"];
-          const baseUrl = Array.isArray(baseHeader)
+          const baseUrlFromHeader = Array.isArray(baseHeader)
             ? baseHeader[0]
             : baseHeader;
+          const baseUrl =
+            baseUrlFromHeader ||
+            parsedRequestUrl.searchParams.get("jiraBaseUrl") ||
+            "";
           if (!baseUrl) {
             res.statusCode = 400;
             res.end("Missing x-jira-base-url header");
@@ -46,8 +52,16 @@ export default defineConfig({
             return;
           }
 
-          const proxyPath = requestUrl.slice(JIRA_PROXY_PREFIX.length) || "/";
-          const targetUrl = new URL(proxyPath, `${origin.origin}/`);
+          const proxyPath =
+            parsedRequestUrl.pathname.slice(JIRA_PROXY_PREFIX.length) || "/";
+          const upstreamParams = new URLSearchParams(
+            parsedRequestUrl.searchParams,
+          );
+          upstreamParams.delete("jiraBaseUrl");
+          const targetUrl = new URL(
+            `${proxyPath}${upstreamParams.toString() ? `?${upstreamParams.toString()}` : ""}`,
+            `${origin.origin}/`,
+          );
 
           const headers = new Headers();
           for (const [key, value] of Object.entries(req.headers)) {
@@ -58,11 +72,23 @@ export default defineConfig({
               lower === "origin" ||
               lower === "referer" ||
               lower === "content-length" ||
-              lower === "x-jira-base-url"
+              lower === "x-jira-base-url" ||
+              lower === "x-jira-authorization"
             ) {
               continue;
             }
             headers.set(key, Array.isArray(value) ? value.join(",") : value);
+          }
+
+          const authHeader = req.headers["x-jira-authorization"];
+          const proxiedAuthorization = Array.isArray(authHeader)
+            ? authHeader[0]
+            : authHeader;
+          if (proxiedAuthorization) {
+            headers.set("authorization", proxiedAuthorization);
+          }
+          if (!headers.has("accept")) {
+            headers.set("accept", "application/json");
           }
 
           const method = (req.method || "GET").toUpperCase();

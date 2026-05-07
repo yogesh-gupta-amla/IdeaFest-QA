@@ -34,8 +34,10 @@ function toRequestUrl(baseUrl: string, url: string): string {
   if (!proxyPrefix) return url;
   const parsed = new URL(url);
   const params = new URLSearchParams(parsed.searchParams);
-  // Header forwarding can be stripped by some hosts, so keep base URL as fallback.
-  params.set("jiraBaseUrl", baseUrl);
+  if (!shouldUseDevProxy()) {
+    // Header forwarding can be stripped by some hosts, so keep base URL as fallback.
+    params.set("jiraBaseUrl", baseUrl);
+  }
   const query = params.toString();
   return `${proxyPrefix}${parsed.pathname}${query ? `?${query}` : ""}`;
 }
@@ -944,6 +946,8 @@ export interface DevInfo {
   pullRequests: DevPullRequest[];
 }
 
+const devStatusSupportCache = new Map<string, "available" | "unavailable">();
+
 export async function fetchDevInfo(
   baseUrl: string,
   issueIds: string[],
@@ -975,40 +979,99 @@ export async function fetchDevInfo(
     return { success: false, error: hostedWebCorsError };
   }
 
+  const emptyByIssue = () => {
+    const empty: Record<string, DevInfo> = {};
+    for (const issueId of issueIds) {
+      empty[issueId] = { commits: [], pullRequests: [] };
+    }
+    return empty;
+  };
+
+  const supportKey = `${baseUrl}::${authToken ? "token" : "session"}`;
+  if (devStatusSupportCache.get(supportKey) === "unavailable") {
+    return { success: true, devInfo: emptyByIssue() };
+  }
+
+  const isUnsupportedStatus = (status: number) =>
+    status === 401 || status === 403 || status === 404;
+
+  const fetchIssueDevStatus = async (issueId: string) => {
+    const empty = { issueId, commits: [], pullRequests: [] };
+    try {
+      const primaryDevStatusUrl = `${baseUrl}/rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=GitHub&dataType=repository`;
+      const res = await fetch(
+        toRequestUrl(baseUrl, primaryDevStatusUrl),
+        buildFetchOptions(authToken, baseUrl),
+      );
+      if (res.ok) {
+        return {
+          data: parseDevStatusResponse(issueId, await res.json()),
+          unsupported: false,
+        };
+      }
+
+      const fallbackDevStatusUrl = `${baseUrl}/rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=stash&dataType=repository`;
+      const res2 = await fetch(
+        toRequestUrl(baseUrl, fallbackDevStatusUrl),
+        buildFetchOptions(authToken, baseUrl),
+      );
+      if (res2.ok) {
+        return {
+          data: parseDevStatusResponse(issueId, await res2.json()),
+          unsupported: false,
+        };
+      }
+
+      return {
+        data: empty,
+        unsupported:
+          isUnsupportedStatus(res.status) && isUnsupportedStatus(res2.status),
+      };
+    } catch {
+      return { data: empty, unsupported: false };
+    }
+  };
+
   const t0 = Date.now();
   const results: Record<string, DevInfo> = {};
   const BATCH = 10;
   try {
-    for (let i = 0; i < issueIds.length; i += BATCH) {
-      const batch = issueIds.slice(i, i + BATCH);
-      const batchResults = await Promise.all(
-        batch.map(async (issueId) => {
-          try {
-            const primaryDevStatusUrl = `${baseUrl}/rest/dev-status/latest/issue/detail?issueId=${issueId}&applicationType=GitHub&dataType=repository`;
-            const res = await fetch(
-              toRequestUrl(baseUrl, primaryDevStatusUrl),
-              buildFetchOptions(authToken, baseUrl),
-            );
-            if (!res.ok) {
-              const fallbackDevStatusUrl = `${baseUrl}/rest/dev-status/1.0/issue/detail?issueId=${issueId}&applicationType=stash&dataType=repository`;
-              const res2 = await fetch(
-                toRequestUrl(baseUrl, fallbackDevStatusUrl),
-                buildFetchOptions(authToken, baseUrl),
-              );
-              if (!res2.ok) return { issueId, commits: [], pullRequests: [] };
-              return parseDevStatusResponse(issueId, await res2.json());
-            }
-            return parseDevStatusResponse(issueId, await res.json());
-          } catch {
-            return { issueId, commits: [], pullRequests: [] };
-          }
-        }),
-      );
+    if (issueIds.length > 0 && !devStatusSupportCache.has(supportKey)) {
+      const probe = await fetchIssueDevStatus(issueIds[0]);
+      if (probe.unsupported) {
+        devStatusSupportCache.set(supportKey, "unavailable");
+        return { success: true, devInfo: emptyByIssue() };
+      }
+      devStatusSupportCache.set(supportKey, "available");
+      results[probe.data.issueId] = {
+        commits: probe.data.commits,
+        pullRequests: probe.data.pullRequests,
+      };
+    }
+
+    const pendingIds = issueIds.filter((id) => !results[id]);
+    for (let i = 0; i < pendingIds.length; i += BATCH) {
+      const batch = pendingIds.slice(i, i + BATCH);
+      const batchResults = await Promise.all(batch.map(fetchIssueDevStatus));
+      for (const r of batchResults) {
+        if (r.unsupported) {
+          devStatusSupportCache.set(supportKey, "unavailable");
+        }
+      }
       for (const r of batchResults)
-        results[r.issueId] = {
-          commits: r.commits,
-          pullRequests: r.pullRequests,
+        results[r.data.issueId] = {
+          commits: r.data.commits,
+          pullRequests: r.data.pullRequests,
         };
+
+      if (devStatusSupportCache.get(supportKey) === "unavailable") {
+        for (const issueId of pendingIds) {
+          if (!results[issueId]) {
+            results[issueId] = { commits: [], pullRequests: [] };
+          }
+        }
+        break;
+      }
     }
     apiLogger.log("FETCH_DEV_INFO", `${baseUrl}/rest/dev-status/...`, {
       headers: authHeaders(authToken),

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useApp } from "./context/AppContext";
 import QADashboard from "./pages/QADashboard";
 import {
@@ -78,6 +78,7 @@ export default function App() {
     key: string;
     name: string;
   } | null>(null);
+  const cancelRef = useRef(false);
   const { themeId, activeSection } = useDashboardStore();
 
   // Apply QA dashboard theme on first load
@@ -238,6 +239,7 @@ export default function App() {
       setSelectedProjectName(projectName);
       setShowDashboard(false);
       setMetrics(null);
+      cancelRef.current = false;
       store.setProjectDataLoaded(false);
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
@@ -330,6 +332,12 @@ export default function App() {
           q.label,
         );
 
+        // Abort early if user cancelled
+        if (cancelRef.current) {
+          hideLoading();
+          return;
+        }
+
         // Stop early if the first critical query fails
         if (key === "open" && !results[key].success) {
           hideLoading();
@@ -342,6 +350,12 @@ export default function App() {
       setLoadingText(`Fetching sprint info for ${projectKey}…`);
       setLoadingProgress(null);
       const sprintResult = await fetchActiveSprint(jiraUrl, projectKey, token);
+
+      // Abort early if user cancelled
+      if (cancelRef.current) {
+        hideLoading();
+        return;
+      }
 
       // ── Extract results ──
       const openIssues = results.open.issues || [];
@@ -497,6 +511,12 @@ export default function App() {
     ],
   );
 
+  const handleCancel = useCallback(() => {
+    cancelRef.current = true;
+    hideLoading();
+    setShowQADashboard(false);
+  }, [hideLoading]);
+
   const handleTimeRangeChange = useCallback(
     async (timeRange: QueryTimeRange) => {
       const store = useDashboardStore.getState();
@@ -546,6 +566,7 @@ export default function App() {
           visible={loading}
           text={loadingText}
           progress={loadingProgress}
+          onCancel={handleCancel}
         />
         <Toast toast={toast} />
         <QADashboard
@@ -606,6 +627,7 @@ export default function App() {
         visible={loading}
         text={loadingText}
         progress={loadingProgress}
+        onCancel={handleCancel}
       />
       <Toast toast={toast} />
       <LandingScreen

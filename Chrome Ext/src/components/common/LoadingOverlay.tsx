@@ -31,12 +31,14 @@ interface LoadingOverlayProps {
   visible: boolean;
   text: string;
   progress?: { fetched: number; total: number; label: string } | null;
+  onCancel?: () => void;
 }
 
 export default function LoadingOverlay({
   visible,
   text,
   progress,
+  onCancel,
 }: LoadingOverlayProps) {
   const [elapsed, setElapsed] = useState(0);
   const [tipIdx, setTipIdx] = useState(0);
@@ -293,6 +295,39 @@ export default function LoadingOverlay({
             💡 {TIPS[tipIdx]}
           </p>
         </div>
+
+        {/* Cancel button */}
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            style={{
+              marginTop: 20,
+              padding: "8px 28px",
+              borderRadius: 8,
+              border: "1px solid rgba(239,68,68,0.4)",
+              background: "rgba(239,68,68,0.08)",
+              color: "#f87171",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "background 0.2s ease, border-color 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(239,68,68,0.18)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                "rgba(239,68,68,0.7)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "rgba(239,68,68,0.08)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                "rgba(239,68,68,0.4)";
+            }}
+          >
+            ✕ Cancel
+          </button>
+        )}
       </div>
     </div>
   );

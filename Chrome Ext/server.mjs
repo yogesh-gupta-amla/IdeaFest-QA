@@ -1,6 +1,8 @@
-import { createServer } from "node:http";
-import { createReadStream, readFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+// Production server — Express + http-proxy-middleware
+// Serves the React build and proxies /jira-proxy/* to Jira Cloud server-side.
+import express from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,29 +13,13 @@ const distDir = path.join(__dirname, "dist");
 loadEnvFiles();
 
 const HOST = process.env.HOST || "0.0.0.0";
-const PORT = Number(process.env.PORT || 4173);
+// Azure App Service Windows uses HTTP_PLATFORM_PORT; Linux uses PORT.
+const PORT = Number(process.env.PORT || process.env.HTTP_PLATFORM_PORT || 4173);
 const JIRA_PROXY_PREFIX = normalizeProxyPrefix(
   process.env.JIRA_PROXY_PREFIX ||
     process.env.VITE_JIRA_PROXY_PREFIX ||
     "/jira-proxy",
 );
-
-const MIME_TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
 
 function loadEnvFiles() {
   const envFiles = [
@@ -82,9 +68,9 @@ function normalizeProxyPrefix(prefix) {
   return withSlash.replace(/\/+$/, "") || "/jira-proxy";
 }
 
-function getHeaderValue(rawValue) {
-  if (!rawValue) return "";
-  return Array.isArray(rawValue) ? rawValue[0] || "" : rawValue;
+function headerVal(h) {
+  if (!h) return "";
+  return Array.isArray(h) ? h[0] || "" : h;
 }
 
 function isValidJiraOrigin(baseUrl) {
@@ -98,165 +84,87 @@ function isValidJiraOrigin(baseUrl) {
   }
 }
 
-async function readRequestBody(req) {
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
+// ── Express app ───────────────────────────────────────────────────────────────
+const app = express();
 
-function writeJson(res, status, payload) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(payload));
-}
+// ── Jira reverse proxy ────────────────────────────────────────────────────────
+// Step 1: validate and extract the Jira target from headers/query.
+app.use(JIRA_PROXY_PREFIX, (req, res, next) => {
+  const rawBase =
+    headerVal(req.headers["x-jira-base-url"]) ||
+    String(req.query?.jiraBaseUrl ?? "");
 
-async function proxyJiraRequest(req, res, requestUrl) {
-  const baseUrl =
-    getHeaderValue(req.headers["x-jira-base-url"]) ||
-    requestUrl.searchParams.get("jiraBaseUrl") ||
-    "";
-  if (!baseUrl) {
-    writeJson(res, 400, {
-      error: "Missing x-jira-base-url header",
-    });
+  if (!rawBase || !isValidJiraOrigin(rawBase)) {
+    res
+      .status(400)
+      .json({ error: "Missing or invalid x-jira-base-url header" });
     return;
   }
 
-  if (!isValidJiraOrigin(baseUrl)) {
-    writeJson(res, 400, {
-      error: "Invalid Jira base URL. Expected https://<site>.atlassian.net",
-    });
-    return;
-  }
-
-  const jiraOrigin = new URL(baseUrl).origin;
-  const proxyPath = requestUrl.pathname.slice(JIRA_PROXY_PREFIX.length) || "/";
-  const upstreamParams = new URLSearchParams(requestUrl.searchParams);
-  upstreamParams.delete("jiraBaseUrl");
-  const upstreamQuery = upstreamParams.toString();
-  const targetUrl = new URL(
-    `${proxyPath}${upstreamQuery ? `?${upstreamQuery}` : ""}`,
-    `${jiraOrigin}/`,
-  );
-
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (!value) continue;
-    const lower = key.toLowerCase();
-    if (
-      lower === "host" ||
-      lower === "origin" ||
-      lower === "referer" ||
-      lower === "content-length" ||
-      lower === "x-jira-base-url" ||
-      lower === "x-jira-authorization" ||
-      lower === "connection"
-    ) {
-      continue;
-    }
-    headers.set(key, Array.isArray(value) ? value.join(",") : value);
-  }
-
-  const proxiedAuthorization = getHeaderValue(
-    req.headers["x-jira-authorization"],
-  );
-  if (proxiedAuthorization) {
-    headers.set("authorization", proxiedAuthorization);
-  }
-  if (!headers.has("accept")) {
-    headers.set("accept", "application/json");
-  }
-
-  const method = (req.method || "GET").toUpperCase();
-  const hasBody = method !== "GET" && method !== "HEAD";
-  const body = hasBody ? await readRequestBody(req) : undefined;
-
-  try {
-    const upstream = await fetch(targetUrl.toString(), {
-      method,
-      headers,
-      body: body && body.length > 0 ? body : undefined,
-      redirect: "manual",
-    });
-
-    res.statusCode = upstream.status;
-    upstream.headers.forEach((value, key) => {
-      const lower = key.toLowerCase();
-      if (lower === "transfer-encoding") return;
-      res.setHeader(key, value);
-    });
-
-    const payload = Buffer.from(await upstream.arrayBuffer());
-    res.end(payload);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Jira proxy request failed";
-    writeJson(res, 502, { error: message });
-  }
-}
-
-async function serveStatic(req, res, requestUrl) {
-  let pathname = decodeURIComponent(requestUrl.pathname);
-  if (pathname.endsWith("/")) pathname += "index.html";
-
-  const requestedPath = path.normalize(path.join(distDir, pathname));
-  const isSafePath =
-    requestedPath === distDir ||
-    requestedPath.startsWith(`${distDir}${path.sep}`);
-
-  if (!isSafePath) {
-    writeJson(res, 403, { error: "Forbidden path" });
-    return;
-  }
-
-  let filePath = requestedPath;
-  try {
-    const fileStat = await stat(filePath);
-    if (fileStat.isDirectory()) {
-      filePath = path.join(filePath, "index.html");
-    }
-  } catch {
-    filePath = path.join(distDir, "index.html");
-  }
-
-  try {
-    const ext = path.extname(filePath).toLowerCase();
-    res.statusCode = 200;
-    res.setHeader(
-      "Content-Type",
-      MIME_TYPES[ext] || "application/octet-stream",
-    );
-    createReadStream(filePath).pipe(res);
-  } catch {
-    writeJson(res, 500, { error: "Failed to serve static file" });
-  }
-}
-
-const server = createServer(async (req, res) => {
-  try {
-    const requestUrl = new URL(
-      req.url || "/",
-      `http://${req.headers.host || "localhost"}`,
-    );
-
-    if (requestUrl.pathname.startsWith(JIRA_PROXY_PREFIX)) {
-      await proxyJiraRequest(req, res, requestUrl);
-      return;
-    }
-
-    await serveStatic(req, res, requestUrl);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unexpected server error";
-    writeJson(res, 500, { error: message });
-  }
+  req._jiraTarget = new URL(rawBase).origin;
+  next();
 });
 
-server.listen(PORT, HOST, () => {
-  // eslint-disable-next-line no-console
+// Step 2: forward the request server-side to Jira.
+app.use(
+  JIRA_PROXY_PREFIX,
+  createProxyMiddleware({
+    changeOrigin: true,
+    secure: true,
+    router: (req) => req._jiraTarget,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        // Remove relay-only headers that must not reach Jira.
+        for (const h of [
+          "x-jira-base-url",
+          "x-jira-authorization",
+          "origin",
+          "referer",
+        ]) {
+          proxyReq.removeHeader(h);
+        }
+
+        // Map x-jira-authorization → Authorization for Jira.
+        const proxiedAuth = headerVal(req.headers["x-jira-authorization"]);
+        if (proxiedAuth) proxyReq.setHeader("authorization", proxiedAuth);
+
+        if (!proxyReq.getHeader("accept")) {
+          proxyReq.setHeader("accept", "application/json");
+        }
+
+        // Strip relay-only jiraBaseUrl query param before forwarding.
+        if (proxyReq.path.includes("jiraBaseUrl=")) {
+          const sepIdx = proxyReq.path.indexOf("?");
+          if (sepIdx !== -1) {
+            const params = new URLSearchParams(proxyReq.path.slice(sepIdx + 1));
+            params.delete("jiraBaseUrl");
+            const qs = params.toString();
+            proxyReq.path =
+              proxyReq.path.slice(0, sepIdx) + (qs ? `?${qs}` : "");
+          }
+        }
+      },
+
+      error: (err, _req, res) => {
+        if (res && typeof res.status === "function" && !res.headersSent) {
+          res.status(502).json({ error: err.message || "Proxy error" });
+        }
+      },
+    },
+  }),
+);
+
+// ── Static files (React build) ────────────────────────────────────────────────
+app.use(express.static(distDir));
+
+// ── SPA fallback ──────────────────────────────────────────────────────────────
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(distDir, "index.html"));
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+app.listen(PORT, HOST, () => {
   console.log(
-    `DSR app server running at http://${HOST}:${PORT} (proxy: ${JIRA_PROXY_PREFIX})`,
+    `DSR Insights server at http://${HOST}:${PORT}  (proxy: ${JIRA_PROXY_PREFIX})`,
   );
 });

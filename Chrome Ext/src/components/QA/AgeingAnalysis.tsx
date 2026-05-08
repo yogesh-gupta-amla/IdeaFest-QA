@@ -48,22 +48,29 @@ const AGEING_COLORS: Record<AgeingStatus, string> = {
 type AgeingTab = "over48" | "fresh";
 
 const TAB_CONFIG: { key: AgeingTab; label: string; icon: React.ReactNode }[] = [
-  { key: "over48", label: "Reported >48 Hrs", icon: <ClockCircleOutlined /> },
-  { key: "fresh", label: "Fresh Bugs", icon: <BugOutlined /> },
+  {
+    key: "over48",
+    label: "Reported in Last 48h",
+    icon: <ClockCircleOutlined />,
+  },
+  { key: "fresh", label: "Fresh Bugs (Last 8h)", icon: <BugOutlined /> },
 ];
 
 const AgeingAnalysis: React.FC = () => {
   const { data: result, isLoading, error } = useAgeingAnalysis();
   const projectKey = useDashboardStore((s) => s.projectKey);
   const ageingIssues = useDashboardStore((s) => s.ageingIssues);
+  const ageingOver48Issues = useDashboardStore((s) => s.ageingOver48Issues);
+  const ageingFreshIssues = useDashboardStore((s) => s.ageingFreshIssues);
   const [activeTab, setActiveTab] = useState<AgeingTab>("over48");
   const [showJql, setShowJql] = useState(false);
 
-  // The JQL queries used (no time range — fetches ALL via pagination)
+  // Each tab is sourced directly from a server-side JQL — no client-side
+  // date filtering, so the counts match Jira exactly.
   const AGEING_JQL = {
-    main: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") ORDER BY created DESC`,
-    over48: `issuetype IN (Bug) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND project = ${projectKey} — filtered client-side: created > 48 hours ago`,
-    fresh: `issuetype IN (Bug, Defect) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND project = ${projectKey} — filtered client-side: created > 8 hours ago`,
+    main: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready for UAT") ORDER BY created DESC`,
+    over48: `project = "${projectKey}" AND issuetype = Bug AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND created >= -48h ORDER BY created DESC`,
+    fresh: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND created >= -8h ORDER BY created DESC`,
   };
 
   if (isLoading)
@@ -251,9 +258,10 @@ const AgeingAnalysis: React.FC = () => {
             color: "var(--qa-text-muted)",
           }}
         >
-          📊 Total issues fetched (all pages):{" "}
+          📊 Q1 fetched: <strong>{ageingIssues.length}</strong> · Q2:{" "}
+          <strong>{ageingOver48Issues.length}</strong> · Q3:{" "}
           <strong style={{ color: "var(--qa-accent)" }}>
-            {ageingIssues.length}
+            {ageingFreshIssues.length}
           </strong>
         </span>
         {showJql && (
@@ -268,15 +276,15 @@ const AgeingAnalysis: React.FC = () => {
           >
             {[
               {
-                label: "🚨 Main Query (All Critical/Blockers)",
+                label: "🚨 Q1 — Total Active Critical/Blockers",
                 jql: AGEING_JQL.main,
               },
               {
-                label: "⏰ Reported >48 Hrs (client-filtered)",
+                label: "⏰ Q2 — Reported in Last 48h",
                 jql: AGEING_JQL.over48,
               },
               {
-                label: "🐛 Fresh Bugs (client-filtered)",
+                label: "🐛 Q3 — Fresh Bugs (Last 8h)",
                 jql: AGEING_JQL.fresh,
               },
             ].map((q) => (
@@ -342,13 +350,13 @@ const AgeingAnalysis: React.FC = () => {
       <Row gutter={[16, 16]}>
         {[
           {
-            label: "Reported >48 Hrs",
+            label: "Reported in Last 48h",
             value: reportedOver48.length,
             color: "#ff0033",
             icon: "⏰",
           },
           {
-            label: "Fresh Bugs (>8h unattended)",
+            label: "Fresh Bugs (Last 8h)",
             value: freshBugs.length,
             color: "#fa8c16",
             icon: "🐛",
@@ -507,8 +515,8 @@ const AgeingAnalysis: React.FC = () => {
         title={
           <span style={{ color: "var(--qa-text-primary)" }}>
             {activeTab === "fresh"
-              ? "🐛 Fresh Bugs >8h Unattended (Backlog/Open)"
-              : "⏰ Issues Reported >48 Hours (Backlog/Open)"}
+              ? "🐛 Fresh Bugs — Created in Last 8 Hours (Backlog/Open)"
+              : "⏰ Bugs Reported in Last 48 Hours (Backlog/Open)"}
           </span>
         }
         extra={
@@ -541,8 +549,8 @@ const AgeingAnalysis: React.FC = () => {
             emptyText: (
               <div style={{ padding: 24, color: "var(--qa-text-muted)" }}>
                 {activeTab === "fresh"
-                  ? "No fresh bugs unattended for >8 hours"
-                  : "No Blocker/Critical bugs in Backlog/Open for >48 hours"}
+                  ? "No fresh Blocker/Critical bugs created in the last 8 hours"
+                  : "No Blocker/Critical bugs reported in the last 48 hours"}
               </div>
             ),
           }}

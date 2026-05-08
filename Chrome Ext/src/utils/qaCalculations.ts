@@ -84,13 +84,23 @@ const SEVERITY_COLORS: Record<string, string> = {
 export const calculateProjectHealth = (
   issues: QAIssue[],
   recentlyResolved?: QAIssue[],
-  timeRange: QueryTimeRange = "thisweek",
+  timeRange: QueryTimeRange = "lastmonth",
   dateRange?: [string, string],
   ageingIssues?: QAIssue[],
+  activeIssues?: QAIssue[],
 ): ProjectHealthResult => {
-  const active = issues.filter(isActiveIssue);
+  // Total Active Issues comes from the dedicated active-issues JQL (Bug/Defect, not-Done).
+  // Fall back to client-side filter only if the dedicated dataset isn't available.
+  const active =
+    activeIssues && activeIssues.length > 0
+      ? activeIssues
+      : issues.filter(
+          (i) =>
+            isActiveIssue(i) &&
+            (i.issueType === "Bug" || i.issueType === "Defect"),
+        );
   const total = active.length;
-  // Use ageing dataset (canonical lifetime Critical/Blocker query) when available
+  // Critical/Blocker comes from the ageing JQL (Bug/Defect, Blocker|Critical, not-Done).
   const criticalBlockerCount =
     ageingIssues && ageingIssues.length > 0
       ? ageingIssues.length
@@ -108,14 +118,7 @@ export const calculateProjectHealth = (
   });
   const slaBreachCount = slaBreachedIssues.length;
 
-  const rangeHours =
-    timeRange === "all"
-      ? Infinity
-      : timeRange === "lastweek"
-        ? 168
-        : timeRange === "oneday"
-          ? 24
-          : 168; // thisweek
+  const rangeHours = timeRange === "last6months" ? 180 * 24 : 30 * 24;
 
   // Use recentlyResolved (last 7d) for closure rate if provided
   const resolvedInLast7d = recentlyResolved
@@ -169,82 +172,44 @@ export const calculateProjectHealth = (
     ? `Project health is RED. ${criticalBlockerCount} critical/blocker issues and ${slaBreachCount} SLA breaches require immediate attention.`
     : `Project health is GREEN. Closure rate is ${(closureRate * 100).toFixed(0)}%, with ${total} active issues well-managed.`;
 
-  // Defect trend (last 7 days) — combine open issues + recently resolved
+  // Defect trend — combine open issues + recently resolved.
+  // Bucket size adapts to range so charts stay legible:
+  // Last Month → 30 daily buckets, Last 6 Months → 26 weekly buckets.
   const allIssuesForTrend = recentlyResolved
     ? [...issues, ...recentlyResolved]
     : issues;
-  // Build defect trend: determine the day-range for the trend chart
-  const trendDays =
-    timeRange === "all"
-      ? 30 // show last 30 days for all-time view
-      : timeRange === "oneday"
-        ? 1
-        : 7; // thisweek or lastweek
+  const isWeekly = timeRange === "last6months";
+  const bucketCount = isWeekly ? 26 : 30;
+  const bucketMs = (isWeekly ? 7 : 1) * 86400000;
 
-  const defectTrend: TrendPoint[] =
-    trendDays <= 1
-      ? Array.from({ length: 24 }, (_, hour) => {
-          const baseDate = new Date();
-          const slotStart = new Date(baseDate);
-          slotStart.setHours(hour, 0, 0, 0);
-          const slotEnd = new Date(slotStart);
-          slotEnd.setHours(hour, 59, 59, 999);
-          const startMs = slotStart.getTime();
-          const endMs = slotEnd.getTime();
-          const label = `${String(hour).padStart(2, "0")}:00`;
-          const created = allIssuesForTrend.filter((iss) => {
-            const t = new Date(iss.created).getTime();
-            return t >= startMs && t <= endMs;
-          }).length;
-          const resolved = allIssuesForTrend.filter((iss) => {
-            if (!iss.resolved) return false;
-            const t = new Date(iss.resolved).getTime();
-            return t >= startMs && t <= endMs;
-          }).length;
-          const open = allIssuesForTrend.filter((iss) => {
-            return (
-              new Date(iss.created).getTime() <= endMs && isActiveIssue(iss)
-            );
-          }).length;
-          return { date: label, created, resolved, open };
-        })
-      : Array.from({ length: Math.min(trendDays, 90) }, (_, i) => {
-          const endDate =
-            timeRange === "lastweek"
-              ? (() => {
-                  const n = new Date();
-                  const d = n.getDay();
-                  const diff = d === 0 ? -6 : 1 - d;
-                  const m = new Date(n);
-                  m.setDate(n.getDate() + diff - 1);
-                  return m;
-                })()
-              : new Date();
-          const day = new Date(endDate);
-          day.setDate(day.getDate() - (Math.min(trendDays, 90) - 1 - i));
-          const date = day.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          });
-          day.setHours(0, 0, 0, 0);
-          const dayStart = day.getTime();
-          const nextMs = dayStart + 86400000;
-          const created = allIssuesForTrend.filter((iss) => {
-            const t = new Date(iss.created).getTime();
-            return t >= dayStart && t < nextMs;
-          }).length;
-          const resolved = allIssuesForTrend.filter((iss) => {
-            if (!iss.resolved) return false;
-            const t = new Date(iss.resolved).getTime();
-            return t >= dayStart && t < nextMs;
-          }).length;
-          const open = allIssuesForTrend.filter((iss) => {
-            return (
-              new Date(iss.created).getTime() <= nextMs && isActiveIssue(iss)
-            );
-          }).length;
-          return { date, created, resolved, open };
-        });
+  const defectTrend: TrendPoint[] = Array.from(
+    { length: bucketCount },
+    (_, i) => {
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      const bucketEnd = end.getTime() - (bucketCount - 1 - i) * bucketMs;
+      const bucketStart = bucketEnd - bucketMs + 1;
+      const label = new Date(bucketEnd).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      const created = allIssuesForTrend.filter((iss) => {
+        const t = new Date(iss.created).getTime();
+        return t >= bucketStart && t <= bucketEnd;
+      }).length;
+      const resolved = allIssuesForTrend.filter((iss) => {
+        if (!iss.resolved) return false;
+        const t = new Date(iss.resolved).getTime();
+        return t >= bucketStart && t <= bucketEnd;
+      }).length;
+      const open = allIssuesForTrend.filter((iss) => {
+        return (
+          new Date(iss.created).getTime() <= bucketEnd && isActiveIssue(iss)
+        );
+      }).length;
+      return { date: label, created, resolved, open };
+    },
+  );
 
   const severityDistribution: SeverityBucket[] = (
     ["Blocker", "Critical", "High", "Medium", "Low"] as const
@@ -353,45 +318,35 @@ function buildAgeingItem(issue: QAIssue): AgeingItem {
 }
 
 /**
- * Ageing analysis based on three Jira query categories:
+ * Ageing analysis driven by three Jira queries (Q1, Q2, Q3) executed
+ * server-side. Each result set is used directly — there is no client-side
+ * date filtering, so what you see in the dashboard matches the JQL exactly.
  *
- * 1. **Reported >48 Hrs** — Bug type, status IN (Backlog, Open), Blocker/Critical,
- *    created in range, AND hours elapsed > 48.
+ * - **Q1 / totalCriticalBlockers** — Bug/Defect, Blocker/Critical, NOT IN
+ *   (Done, QA Done, Rejected, Ready for Production/QA/Testing/UAT).
  *
- * 2. **Total Critical/Blockers** — Bug/Defect type, all active statuses (NOT IN
- *    Done, QA Done, Rejected, Ready For Production, etc.), Blocker/Critical,
- *    created in range.
+ * - **Q2 / reportedOver48** — Bug, status IN (Backlog, Open),
+ *   Blocker/Critical, created within the last 48 hours.
  *
- * 3. **Fresh Bugs** — Bug/Defect type, status IN (Backlog, Open), Blocker/Critical,
- *    created in range, AND hours elapsed > 8 (created more than 8h ago but still
- *    untouched).
+ * - **Q3 / freshBugs** — Bug/Defect, status IN (Backlog, Open),
+ *   Blocker/Critical, created within the last 8 hours.
  */
 export const calculateAgeingAnalysis = (
-  issues: QAIssue[],
+  totalCriticalBlockerIssues: QAIssue[],
+  over48Issues: QAIssue[],
+  freshIssues: QAIssue[],
 ): AgeingAnalysisResult => {
-  // All issues passed in are already filtered by the ageing JQL:
-  //   issuetype IN (Bug, Defect), priority IN (Blocker, Critical),
-  //   status NOT IN (Done, QA Done, Rejected, …), created in range
-  const allItems = issues
+  const totalCriticalBlockers = totalCriticalBlockerIssues
+    .map(buildAgeingItem)
+    .sort((a, b) => b.riskScore - a.riskScore);
+  const reportedOver48 = over48Issues
+    .map(buildAgeingItem)
+    .sort((a, b) => b.riskScore - a.riskScore);
+  const freshBugs = freshIssues
     .map(buildAgeingItem)
     .sort((a, b) => b.riskScore - a.riskScore);
 
-  // Category 1: Reported >48 Hrs
-  // Bug type only, status = Backlog/Open, hours > 48
-  const reportedOver48 = allItems.filter(
-    (item) =>
-      isBacklogOrOpen(item.issue.originalStatus) && item.hoursElapsed > 48,
-  );
-
-  // Category 2: Total Critical/Blockers (all items from the fetch)
-  const totalCriticalBlockers = allItems;
-
-  // Category 3: Fresh Bugs
-  // Backlog/Open status, created > 8h ago (still unattended)
-  const freshBugs = allItems.filter(
-    (item) =>
-      isBacklogOrOpen(item.issue.originalStatus) && item.hoursElapsed > 8,
-  );
+  const allItems = totalCriticalBlockers;
 
   // ─── Risk Insights ──────────────────────────────────────────────────────
   const riskInsights: AgeingRiskInsight[] = [];
@@ -402,7 +357,7 @@ export const calculateAgeingAnalysis = (
   if (reportedOver48.length > 0) {
     riskInsights.push({
       type: "error",
-      message: `${reportedOver48.length} Blocker/Critical issue(s) have been in Backlog/Open for >48 hours — immediate escalation required`,
+      message: `${reportedOver48.length} Blocker/Critical bug(s) reported in the last 48 hours sitting in Backlog/Open — triage today`,
     });
   }
   if (aged > 0) {
@@ -414,7 +369,7 @@ export const calculateAgeingAnalysis = (
   if (freshBugs.length > 0) {
     riskInsights.push({
       type: "warning",
-      message: `${freshBugs.length} bug(s) created >8 hours ago still sitting in Backlog/Open — pickup is overdue`,
+      message: `${freshBugs.length} fresh Blocker/Critical bug(s) reported in the last 8 hours — assign owners now`,
     });
   }
   if (blocked > 0) {
@@ -458,12 +413,12 @@ export const calculateAgeingAnalysis = (
   const recommendations: string[] = [];
   if (reportedOver48.length > 0) {
     recommendations.push(
-      `Immediately triage and assign the ${reportedOver48.length} issue(s) that have been open >48 hours in Backlog/Open`,
+      `Triage the ${reportedOver48.length} Blocker/Critical bug(s) reported in the last 48 hours that are still in Backlog/Open`,
     );
   }
   if (freshBugs.length > 0) {
     recommendations.push(
-      `Review the ${freshBugs.length} fresh bug(s) past the 8-hour pickup window — assign owners and set target dates`,
+      `Assign owners to the ${freshBugs.length} fresh Blocker/Critical bug(s) reported in the last 8 hours`,
     );
   }
   if (blocked > 0) {

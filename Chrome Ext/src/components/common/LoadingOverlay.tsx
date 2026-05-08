@@ -134,8 +134,9 @@ export default function LoadingOverlay({
               width: 56,
               height: 56,
               borderRadius: "50%",
-              border: "3px solid rgba(139,92,246,0.15)",
-              borderTopColor: "#8b5cf6",
+              border:
+                "3px solid color-mix(in srgb, var(--qa-accent) 18%, transparent)",
+              borderTopColor: "var(--qa-accent)",
               animation: "spin 0.8s linear infinite",
             }}
           />
@@ -144,7 +145,7 @@ export default function LoadingOverlay({
         {/* Current action */}
         <p
           style={{
-            color: "#e2e8f0",
+            color: "var(--qa-text-primary)",
             fontSize: 14,
             fontWeight: 600,
             margin: "0 0 4px",
@@ -152,7 +153,13 @@ export default function LoadingOverlay({
         >
           {text}
         </p>
-        <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 16px" }}>
+        <p
+          style={{
+            color: "var(--qa-text-muted)",
+            fontSize: 12,
+            margin: "0 0 16px",
+          }}
+        >
           Elapsed: {timeStr}
         </p>
 
@@ -165,16 +172,25 @@ export default function LoadingOverlay({
               marginBottom: 4,
             }}
           >
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>
+            <span
+              style={{ fontSize: 11, color: "var(--qa-text-muted)" }}
+            >
               Overall Progress
             </span>
-            <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--qa-accent)",
+                fontWeight: 600,
+              }}
+            >
               {overallPct}%
             </span>
           </div>
           <div
             style={{
-              background: "rgba(255,255,255,0.08)",
+              background:
+                "color-mix(in srgb, var(--qa-text-primary) 8%, transparent)",
               borderRadius: 8,
               height: 10,
               overflow: "hidden",
@@ -182,12 +198,14 @@ export default function LoadingOverlay({
           >
             <div
               style={{
-                background: "linear-gradient(90deg, #8b5cf6, #6366f1, #818cf8)",
+                background:
+                  "linear-gradient(90deg, var(--qa-accent), var(--qa-accent-hover))",
                 height: "100%",
                 width: `${overallPct}%`,
                 borderRadius: 8,
                 transition: "width 0.4s ease",
-                boxShadow: "0 0 12px rgba(139,92,246,0.4)",
+                boxShadow:
+                  "0 0 12px color-mix(in srgb, var(--qa-accent) 40%, transparent)",
               }}
             />
           </div>
@@ -198,7 +216,8 @@ export default function LoadingOverlay({
           <div style={{ marginBottom: 12 }}>
             <div
               style={{
-                background: "rgba(255,255,255,0.06)",
+                background:
+                  "color-mix(in srgb, var(--qa-text-primary) 6%, transparent)",
                 borderRadius: 6,
                 height: 6,
                 overflow: "hidden",
@@ -207,7 +226,8 @@ export default function LoadingOverlay({
             >
               <div
                 style={{
-                  background: "linear-gradient(90deg, #22d3ee, #6366f1)",
+                  background:
+                    "linear-gradient(90deg, var(--qa-accent-hover), var(--qa-accent))",
                   height: "100%",
                   width: `${pagePct}%`,
                   borderRadius: 6,
@@ -215,7 +235,13 @@ export default function LoadingOverlay({
                 }}
               />
             </div>
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            <p
+              style={{
+                fontSize: 11,
+                color: "var(--qa-text-muted)",
+                margin: 0,
+              }}
+            >
               {progress.label}:{" "}
               {Math.min(progress.fetched, progress.total).toLocaleString()} /{" "}
               {progress.total.toLocaleString()} ({pagePct}%)
@@ -247,11 +273,15 @@ export default function LoadingOverlay({
                   borderRadius: 6,
                   fontSize: 11,
                   background: isActive
-                    ? "rgba(139,92,246,0.15)"
+                    ? "color-mix(in srgb, var(--qa-accent) 18%, transparent)"
                     : isDone
-                      ? "rgba(34,197,94,0.08)"
-                      : "rgba(255,255,255,0.03)",
-                  color: isActive ? "#a78bfa" : isDone ? "#4ade80" : "#475569",
+                      ? "color-mix(in srgb, var(--qa-success, #22c55e) 12%, transparent)"
+                      : "color-mix(in srgb, var(--qa-text-primary) 4%, transparent)",
+                  color: isActive
+                    ? "var(--qa-accent)"
+                    : isDone
+                      ? "var(--qa-success, #22c55e)"
+                      : "var(--qa-text-muted)",
                   fontWeight: isActive ? 600 : 400,
                   transition: "all 0.3s ease",
                 }}
@@ -279,14 +309,16 @@ export default function LoadingOverlay({
             marginTop: 12,
             padding: "10px 16px",
             borderRadius: 8,
-            background: "rgba(139,92,246,0.06)",
-            border: "1px solid rgba(139,92,246,0.12)",
+            background:
+              "color-mix(in srgb, var(--qa-accent) 8%, transparent)",
+            border:
+              "1px solid color-mix(in srgb, var(--qa-accent) 18%, transparent)",
           }}
         >
           <p
             style={{
               fontSize: 12,
-              color: "#94a3b8",
+              color: "var(--qa-text-muted)",
               margin: 0,
               fontStyle: "italic",
               transition: "opacity 0.5s ease",

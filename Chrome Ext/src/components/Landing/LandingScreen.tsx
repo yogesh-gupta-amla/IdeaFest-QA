@@ -9,6 +9,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+/** Hardcoded Jira host for the IdeaFest QA dashboard. */
+const JIRA_URL = "https://amla.atlassian.net";
+
 interface LandingScreenProps {
   jiraUrl: string;
   authMode: AuthMode;
@@ -39,14 +42,12 @@ function GlowOrb({
 }
 
 export default function LandingScreen({
-  jiraUrl,
   authMode,
   user,
   projects,
   onConnect,
   onLoadProject,
 }: LandingScreenProps) {
-  const [url, setUrl] = useState(jiraUrl || "");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -54,12 +55,9 @@ export default function LandingScreen({
 
   const connected = authMode === "token" && !!user;
 
-  // Session-based auth disabled — not supported in standalone React app
-  // const handleSessionConnect = async () => { ... };
-
   const handleTokenConnect = async () => {
     setConnecting(true);
-    await onConnect(url, email, token);
+    await onConnect(JIRA_URL, email, token);
     setConnecting(false);
   };
 
@@ -223,42 +221,6 @@ export default function LandingScreen({
 
           {!connected && (
             <div className="flex flex-col gap-3">
-              {/* Jira URL */}
-              <div>
-                <label
-                  className="text-xs font-medium mb-1.5 block"
-                  style={{ color: "var(--text-muted, #94a3b8)" }}
-                >
-                  Jira URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://company.atlassian.net"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="w-full rounded-xl text-sm outline-none transition-all duration-200"
-                  style={{
-                    padding: "10px 12px",
-                    background: "var(--input-bg, rgba(255,255,255,0.05))",
-                    border: "1px solid var(--border, rgba(255,255,255,0.1))",
-                    color: "var(--text-heading, #e2e8f0)",
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor =
-                      "color-mix(in srgb, var(--qa-accent, #8b5cf6) 60%, transparent)";
-                    e.currentTarget.style.boxShadow =
-                      "0 0 0 3px var(--accent-glow, rgba(139,92,246,0.15))";
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor =
-                      "var(--border, rgba(255,255,255,0.1))";
-                    e.currentTarget.style.boxShadow = "none";
-                  }}
-                />
-              </div>
-
               {/* Email */}
               <div>
                 <label
@@ -327,7 +289,7 @@ export default function LandingScreen({
                     e.currentTarget.style.boxShadow = "none";
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && url && email && token)
+                    if (e.key === "Enter" && email && token)
                       void handleTokenConnect();
                   }}
                 />
@@ -336,9 +298,7 @@ export default function LandingScreen({
               {/* Authenticate button */}
               <button
                 onClick={handleTokenConnect}
-                disabled={
-                  connecting || !url.trim() || !email.trim() || !token.trim()
-                }
+                disabled={connecting || !email.trim() || !token.trim()}
                 className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-1"
                 style={{
                   background: `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,

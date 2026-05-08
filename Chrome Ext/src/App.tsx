@@ -39,6 +39,9 @@ import {
 import type { DateRange } from "./utils/queryTimeRange";
 import LandingScreen from "./components/Landing/LandingScreen";
 
+/** Hardcoded Jira host — the dashboard only ever talks to the Amla tenant. */
+const JIRA_URL = "https://amla.atlassian.net";
+
 export default function App() {
   const {
     theme,
@@ -92,26 +95,25 @@ export default function App() {
     (async () => {
       const stored = await storageGet([
         "theme",
-        "jiraUrl",
         "jiraEmail",
         "jiraTokenB64",
         "authMode",
         "lastActiveSection",
       ]);
-      const t = (stored.theme as Theme) || "dark";
+      const t = (stored.theme as Theme) || "light";
       setTheme(t);
       if (typeof stored.lastActiveSection === "string") {
         useDashboardStore
           .getState()
           .setActiveSection(stored.lastActiveSection as string);
       }
-      if (stored.jiraUrl) setJiraUrl(stored.jiraUrl as string);
+      setJiraUrl(JIRA_URL);
       if (stored.jiraTokenB64) setAuthToken(stored.jiraTokenB64 as string);
       if (stored.authMode) {
         const mode = stored.authMode as AuthMode;
-        if (stored.jiraUrl && mode === "token" && stored.jiraTokenB64) {
+        if (mode === "token" && stored.jiraTokenB64) {
           await attemptAutoConnect(
-            stored.jiraUrl as string,
+            JIRA_URL,
             stored.jiraTokenB64 as string,
           ).catch(async () => {
             setAuthMode("none");
@@ -185,22 +187,9 @@ export default function App() {
   );
 
   const handleConnect = useCallback(
-    async (url: string, email?: string, token?: string) => {
-      const raw = url.trim().replace(/\/+$/, "");
-      if (!raw) {
-        showToast("Please enter a Jira URL", "error");
-        return;
-      }
-      try {
-        const u = new URL(raw);
-        if (!u.hostname.endsWith(".atlassian.net")) {
-          showToast("URL must be a *.atlassian.net domain", "error");
-          return;
-        }
-      } catch {
-        showToast("Invalid URL format", "error");
-        return;
-      }
+    async (_url: string, email?: string, token?: string) => {
+      // The Jira host is hardcoded — ignore whatever the caller passes.
+      const raw = JIRA_URL;
 
       if (!email || !token) {
         showToast("Enter Atlassian email and API token", "error");
@@ -212,7 +201,6 @@ export default function App() {
       const auth = await validateAuth(raw, b64);
       if (auth.success && auth.user) {
         await storageSet({
-          jiraUrl: raw,
           jiraEmail: email,
           jiraTokenB64: b64,
           authMode: "token",
@@ -244,6 +232,8 @@ export default function App() {
       store.setRawIssues([]);
       store.setRecentlyResolved([]);
       store.setAgeingIssues([]);
+      store.setAgeingOver48Issues([]);
+      store.setAgeingFreshIssues([]);
       store.setActiveIssues([]);
       store.setOverburntIssues([]);
       store.setEarlyCompletionIssues([]);
@@ -264,47 +254,56 @@ export default function App() {
       const resolvedClause = getResolvedTimeRangeClause(timeRange, dateRange);
       const worklogClause = getWorklogTimeRangeClause(timeRange, dateRange);
 
-      // Helper to inject an optional AND clause into JQL
-      const and = (clause: string) => (clause ? ` AND ${clause}` : "");
-
       // ── Define all JQL queries ──
       // All queries use fetchAllPages (isLast loop) for full pagination.
-      // Ageing is always lifetime (no date filter). Others respect Lifetime/Custom.
+      // The duration filter is mandatory (Last Month / Last 6 Months) to keep
+      // each project's full fetch within a reasonable window.
       const queries = {
         open: {
-          jql: `project = "${projectKey}" AND resolution = Unresolved${and(createdClause)} ORDER BY priority ASC, created DESC`,
+          jql: `project = "${projectKey}" AND resolution = Unresolved AND ${createdClause} ORDER BY priority ASC, created DESC`,
           label: "Open Issues",
         },
         created: {
-          jql: `project = "${projectKey}"${and(createdClause)} ORDER BY priority ASC, created DESC`,
+          jql: `project = "${projectKey}" AND ${createdClause} ORDER BY priority ASC, created DESC`,
           label: "Created Issues",
         },
         resolved: {
-          jql: `project = "${projectKey}"${and(resolvedClause)} ORDER BY resolved DESC`,
+          jql: `project = "${projectKey}" AND ${resolvedClause} ORDER BY resolved DESC`,
           label: "Resolved Issues",
         },
         recentResolved: {
-          jql: `project = "${projectKey}"${and(resolvedClause)} ORDER BY resolved DESC`,
+          jql: `project = "${projectKey}" AND ${resolvedClause} ORDER BY resolved DESC`,
           label: "Recently Resolved",
         },
         ageing: {
-          jql: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") ORDER BY created DESC`,
+          // Q1 — Total active Critical/Blockers (Bug or Defect)
+          jql: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND priority IN (Blocker, Critical) AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready for UAT") ORDER BY created DESC`,
           label: "Ageing Critical/Blockers",
         },
+        ageingOver48: {
+          // Q2 — Bugs in Backlog/Open created within the last 48 hours
+          jql: `project = "${projectKey}" AND issuetype = Bug AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND created >= -48h ORDER BY created DESC`,
+          label: "Reported in Last 48h",
+        },
+        ageingFresh: {
+          // Q3 — Bugs/Defects in Backlog/Open created within the last 8 hours
+          jql: `project = "${projectKey}" AND issuetype IN (Bug, Defect) AND status IN (Backlog, Open) AND priority IN (Blocker, Critical) AND created >= -8h ORDER BY created DESC`,
+          label: "Fresh Bugs (Last 8h)",
+        },
         activeIssues: {
-          jql: `project = "${projectKey}" AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") AND issuetype IN (Bug, Defect) ORDER BY created DESC`,
+          jql: `project = "${projectKey}" AND status NOT IN (Done, "QA Done", Rejected, "Ready For Production", "Ready for QA", "Ready for Testing", "Ready For UAT") AND issuetype IN (Bug, Defect) AND ${createdClause} ORDER BY created DESC`,
           label: "Total Active Issues",
         },
         overburnt: {
-          jql: `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task)${and(worklogClause)} ORDER BY updated DESC`,
+          jql: `project = "${projectKey}" AND workratio > 100 AND status = Done AND issuetype IN (Bug, Defect, Task, Sub-task) AND ${worklogClause} ORDER BY updated DESC`,
           label: "Overburnt Items",
         },
         earlyCompletion: {
-          jql: `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0${and(resolvedClause)} ORDER BY resolved DESC`,
+          jql: `project = "${projectKey}" AND status = Done AND timeoriginalestimate > 0 AND ${resolvedClause} ORDER BY resolved DESC`,
           label: "Early Completions",
         },
         codeIntel: {
-          jql: `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Epic)${and(resolvedClause)} ORDER BY resolved DESC`,
+          jql: `project = "${projectKey}" AND status = Done AND issuetype IN (Story, Epic) AND ${resolvedClause} ORDER BY resolved DESC`,
           label: "Code Intelligence",
         },
       };
@@ -370,6 +369,12 @@ export default function App() {
         : [];
       const ageingIssues = results.ageing.success
         ? results.ageing.issues || []
+        : [];
+      const ageingOver48Issues = results.ageingOver48?.success
+        ? results.ageingOver48.issues || []
+        : [];
+      const ageingFreshIssues = results.ageingFresh?.success
+        ? results.ageingFresh.issues || []
         : [];
       const activeIssues = results.activeIssues.success
         ? results.activeIssues.issues || []
@@ -462,6 +467,8 @@ export default function App() {
       store.setRawIssues(openIssues);
       store.setRecentlyResolved(recentlyResolved);
       store.setAgeingIssues(ageingIssues);
+      store.setAgeingOver48Issues(ageingOver48Issues);
+      store.setAgeingFreshIssues(ageingFreshIssues);
       store.setActiveIssues(activeIssues);
       store.setOverburntIssues(overburntIssues);
       store.setEarlyCompletionIssues(earlyCompletionIssues);
@@ -576,7 +583,7 @@ export default function App() {
           onLogout={async () => {
             // Clear persisted auth + cached data
             await storageRemove([
-              "jiraUrl",
+              "jiraUrl", // legacy key — clear if present from earlier versions
               "jiraEmail",
               "jiraTokenB64",
               "authMode",

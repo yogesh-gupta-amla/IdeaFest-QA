@@ -12,9 +12,10 @@ const distDir = path.join(__dirname, "dist");
 
 loadEnvFiles();
 
-const HOST = process.env.HOST || "0.0.0.0";
-// Azure App Service Windows uses HTTP_PLATFORM_PORT; Linux uses PORT.
-const PORT = Number(process.env.PORT || process.env.HTTP_PLATFORM_PORT || 4173);
+// IMPORTANT: Do NOT cast PORT to Number. Under IIS Node, process.env.PORT is a
+// named pipe path (e.g. \\.\pipe\iisnode-xxx). Number(<pipe>) is NaN, which
+// silently makes Node listen on a random TCP port that IIS cannot reach.
+const PORT = process.env.PORT || 4173;
 const JIRA_PROXY_PREFIX = normalizeProxyPrefix(
   process.env.JIRA_PROXY_PREFIX ||
     process.env.VITE_JIRA_PROXY_PREFIX ||
@@ -163,8 +164,11 @@ app.use((_req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, HOST, () => {
+// Under iisnode, PORT may be a named-pipe path. Node detects pipe paths and
+// ignores the host argument in that case, so passing "0.0.0.0" is safe for
+// both standalone (TCP) and IIS Node (named-pipe) deployments.
+app.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `DSR Insights server at http://${HOST}:${PORT}  (proxy: ${JIRA_PROXY_PREFIX})`,
+    `DSR Insights server listening on ${PORT}  (proxy: ${JIRA_PROXY_PREFIX})`,
   );
 });

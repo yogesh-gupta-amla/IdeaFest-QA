@@ -441,35 +441,52 @@ const ReusableComponentsTab: React.FC<{
                     >
                       Commits:
                     </strong>
-                    {item.relevantCommits.map((c, ci) => (
-                      <div
-                        key={ci}
-                        style={{
-                          fontSize: 12,
-                          color: "var(--qa-text-secondary)",
-                          marginLeft: 8,
-                          marginTop: 2,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <code style={{ color: "#6366f1" }}>
-                          {c.commitId.substring(0, 8)}
-                        </code>
-                        <span>{c.summary}</span>
-                        {(c.githubUrl || c.url) && (
-                          <a
-                            href={c.githubUrl || c.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#3b82f6", marginLeft: 4 }}
-                          >
-                            <GithubOutlined /> View
-                          </a>
-                        )}
-                      </div>
-                    ))}
+                    {item.relevantCommits.map((c, ci) => {
+                      const href = c.githubUrl || c.url;
+                      const shortId = c.commitId.substring(0, 8);
+                      return (
+                        <div
+                          key={ci}
+                          style={{
+                            fontSize: 12,
+                            color: "var(--qa-text-secondary)",
+                            marginLeft: 8,
+                            marginTop: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          {href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                fontFamily: "monospace",
+                                color: "#3b82f6",
+                                textDecoration: "underline",
+                              }}
+                            >
+                              {shortId}
+                            </a>
+                          ) : (
+                            <code style={{ color: "#6366f1" }}>{shortId}</code>
+                          )}
+                          <span>{c.summary}</span>
+                          {href && (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#3b82f6", marginLeft: 4 }}
+                            >
+                              <GithubOutlined />
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 <div
@@ -547,29 +564,39 @@ const RecentImplementationsTab: React.FC<{ items: RecentImplementation[] }> = ({
       dataIndex: "commitId",
       key: "commitId",
       width: 140,
-      render: (v: string, row: RecentImplementation) =>
-        v ? (
+      render: (v: string, row: RecentImplementation) => {
+        if (!v) {
+          return (
+            <span style={{ color: "var(--qa-text-muted)", fontSize: 12 }}>
+              No commit
+            </span>
+          );
+        }
+        const short = `${v.substring(0, 8)}…`;
+        return (
           <Tooltip title={v}>
             {row.url ? (
               <a
                 href={row.url}
                 target="_blank"
                 rel="noreferrer"
-                style={{ fontFamily: "monospace", fontSize: 12 }}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                  color: "#3b82f6",
+                  textDecoration: "underline",
+                }}
               >
-                {v.substring(0, 8)}… <GithubOutlined />
+                {short} <GithubOutlined />
               </a>
             ) : (
               <span style={{ fontFamily: "monospace", fontSize: 12 }}>
-                {v.substring(0, 8)}…
+                {short}
               </span>
             )}
           </Tooltip>
-        ) : (
-          <span style={{ color: "var(--qa-text-muted)", fontSize: 12 }}>
-            No commit
-          </span>
-        ),
+        );
+      },
     },
     {
       title: "Files",

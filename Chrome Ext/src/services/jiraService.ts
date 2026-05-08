@@ -187,13 +187,15 @@ function mapIssue(issue: Record<string, unknown>): JiraIssue {
     reporter:
       ((fields.reporter as Record<string, unknown>)?.displayName as string) ||
       "",
+    // Keep two decimal places so sub-hour estimates (15m, 30m, 45m) survive
+    // — Math.round to whole hours collapsed everything <30m to 0.
     timeEstimate:
       typeof fields.timeoriginalestimate === "number"
-        ? Math.round(fields.timeoriginalestimate / 3600)
+        ? Math.round((fields.timeoriginalestimate / 3600) * 100) / 100
         : 0,
     timeSpent:
       typeof fields.aggregatetimespent === "number"
-        ? Math.round(fields.aggregatetimespent / 3600)
+        ? Math.round((fields.aggregatetimespent / 3600) * 100) / 100
         : 0,
     resolved: (fields.resolutiondate as string) || null,
     storyPoints: (fields.customfield_10016 as number) || null,

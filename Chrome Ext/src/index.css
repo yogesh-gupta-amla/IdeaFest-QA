@@ -735,7 +735,11 @@
   /* ── Loading Overlay — Gear System ─────────────────── */
   .loading-overlay {
     @apply fixed inset-0 z-[9999] flex items-center justify-center;
-    background: rgba(26, 26, 46, 0.92);
+    background: color-mix(
+      in srgb,
+      var(--qa-bg-primary, #1a1a2e) 92%,
+      transparent
+    );
     backdrop-filter: blur(10px);
   }
   .loading-overlay.hidden {

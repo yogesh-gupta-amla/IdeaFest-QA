@@ -22,6 +22,8 @@ interface DashboardStore {
   rawIssues: JiraIssue[];
   recentlyResolved: JiraIssue[];
   ageingIssues: JiraIssue[];
+  ageingOver48Issues: JiraIssue[];
+  ageingFreshIssues: JiraIssue[];
   activeIssues: JiraIssue[];
   overburntIssues: JiraIssue[];
   earlyCompletionIssues: JiraIssue[];
@@ -30,6 +32,8 @@ interface DashboardStore {
   setRawIssues: (issues: JiraIssue[]) => void;
   setRecentlyResolved: (issues: JiraIssue[]) => void;
   setAgeingIssues: (issues: JiraIssue[]) => void;
+  setAgeingOver48Issues: (issues: JiraIssue[]) => void;
+  setAgeingFreshIssues: (issues: JiraIssue[]) => void;
   setActiveIssues: (issues: JiraIssue[]) => void;
   setOverburntIssues: (issues: JiraIssue[]) => void;
   setEarlyCompletionIssues: (issues: JiraIssue[]) => void;
@@ -61,9 +65,9 @@ const defaultFilters: DashboardFilters = {
 };
 
 export const useDashboardStore = create<DashboardStore>((set) => ({
-  themeId: "dark-pro",
+  themeId: "light-enterprise",
   activeSection: "health",
-  queryTimeRange: "all",
+  queryTimeRange: "lastmonth",
   dateRange: null,
   filters: defaultFilters,
   projectKey: "",
@@ -78,6 +82,8 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   rawIssues: [],
   recentlyResolved: [],
   ageingIssues: [],
+  ageingOver48Issues: [],
+  ageingFreshIssues: [],
   activeIssues: [],
   overburntIssues: [],
   earlyCompletionIssues: [],
@@ -86,6 +92,8 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   setRawIssues: (issues) => set({ rawIssues: issues }),
   setRecentlyResolved: (issues) => set({ recentlyResolved: issues }),
   setAgeingIssues: (issues) => set({ ageingIssues: issues }),
+  setAgeingOver48Issues: (issues) => set({ ageingOver48Issues: issues }),
+  setAgeingFreshIssues: (issues) => set({ ageingFreshIssues: issues }),
   setActiveIssues: (issues) => set({ activeIssues: issues }),
   setOverburntIssues: (issues) => set({ overburntIssues: issues }),
   setEarlyCompletionIssues: (issues) => set({ earlyCompletionIssues: issues }),
@@ -135,6 +143,8 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
       rawIssues: [],
       recentlyResolved: [],
       ageingIssues: [],
+      ageingOver48Issues: [],
+      ageingFreshIssues: [],
       activeIssues: [],
       overburntIssues: [],
       earlyCompletionIssues: [],

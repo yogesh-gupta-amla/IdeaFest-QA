@@ -266,13 +266,7 @@ const EarlyCompletions: React.FC = () => {
   const totalTimeSaved = data.items.reduce((s, i) => s + i.timeSavedHours, 0);
   const topContributor = contributors.length > 0 ? contributors[0] : null;
   const rangeLabel =
-    queryTimeRange === "oneday"
-      ? "One Day"
-      : queryTimeRange === "thisweek"
-        ? "This Week"
-        : queryTimeRange === "lastweek"
-          ? "Last Week"
-          : "All";
+    queryTimeRange === "last6months" ? "Last 6 Months" : "Last Month";
 
   const tabs = [
     { key: "leaderboard" as const, label: "🚀 Leaderboard" },

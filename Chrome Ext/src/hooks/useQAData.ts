@@ -37,6 +37,7 @@ export const useProjectHealth = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const recentlyResolved = useDashboardStore((s) => s.recentlyResolved);
   const ageingIssues = useDashboardStore((s) => s.ageingIssues);
+  const activeIssues = useDashboardStore((s) => s.activeIssues);
   const queryTimeRange = useDashboardStore((s) => s.queryTimeRange);
   const issues = useFilteredIssues();
   const resolvedQA = useMemo(
@@ -47,6 +48,10 @@ export const useProjectHealth = () => {
     () => mapJiraIssuesToQA(ageingIssues),
     [ageingIssues],
   );
+  const activeQA = useMemo(
+    () => mapJiraIssuesToQA(activeIssues),
+    [activeIssues],
+  );
   const data = useMemo(
     () =>
       projectDataLoaded
@@ -56,9 +61,10 @@ export const useProjectHealth = () => {
             queryTimeRange,
             undefined,
             ageingQA,
+            activeQA,
           )
         : null,
-    [projectDataLoaded, issues, queryTimeRange, resolvedQA, ageingQA],
+    [projectDataLoaded, issues, queryTimeRange, resolvedQA, ageingQA, activeQA],
   );
   return { data, isLoading: !projectDataLoaded, error: null };
 };
@@ -66,12 +72,18 @@ export const useProjectHealth = () => {
 export const useAgeingAnalysis = () => {
   const projectDataLoaded = useDashboardStore((s) => s.projectDataLoaded);
   const ageingIssues = useDashboardStore((s) => s.ageingIssues);
+  const ageingOver48Issues = useDashboardStore((s) => s.ageingOver48Issues);
+  const ageingFreshIssues = useDashboardStore((s) => s.ageingFreshIssues);
   const data = useMemo(
     () =>
       projectDataLoaded
-        ? calculateAgeingAnalysis(mapJiraIssuesToQA(ageingIssues))
+        ? calculateAgeingAnalysis(
+            mapJiraIssuesToQA(ageingIssues),
+            mapJiraIssuesToQA(ageingOver48Issues),
+            mapJiraIssuesToQA(ageingFreshIssues),
+          )
         : null,
-    [projectDataLoaded, ageingIssues],
+    [projectDataLoaded, ageingIssues, ageingOver48Issues, ageingFreshIssues],
   );
   return { data, isLoading: !projectDataLoaded, error: null };
 };

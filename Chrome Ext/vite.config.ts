@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
 const JIRA_PROXY_PREFIX = "/jira-proxy";
+const APT_PROXY_PREFIX = "/apt-proxy";
+const APT_BASE_URL = "https://apt.amla.io";
 
 async function readRequestBody(
   req: AsyncIterable<Uint8Array>,
@@ -15,6 +17,17 @@ async function readRequestBody(
 }
 
 export default defineConfig({
+  server: {
+    proxy: {
+      // APT proxy — Vite's native http-proxy pipes the request body directly,
+      // avoiding the FormData re-parsing issues of the custom fetch middleware.
+      [APT_PROXY_PREFIX]: {
+        target: APT_BASE_URL,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(new RegExp(`^${APT_PROXY_PREFIX}`), ""),
+      },
+    },
+  },
   plugins: [
     react(),
     {
@@ -22,6 +35,8 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           const requestUrl = req.url || "";
+
+          // ── Jira proxy ─────────────────────────────────────────────────
           if (!requestUrl.startsWith(JIRA_PROXY_PREFIX)) {
             next();
             return;

@@ -33,6 +33,7 @@ import {
   WifiOff,
   Menu,
 } from "lucide-react";
+import SearchableProjectSelect from "../common/SearchableProjectSelect";
 
 const { Content } = Layout;
 
@@ -45,6 +46,7 @@ interface QALayoutProps {
   projects?: JiraProject[];
   selectedProjectKey?: string;
   onProjectChange?: (key: string, name: string) => void;
+  onRefreshProjects?: () => Promise<void> | void;
   onRefresh?: () => Promise<void> | void;
   onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
@@ -256,10 +258,12 @@ const QALayout: React.FC<QALayoutProps> = ({
   projects = [],
   selectedProjectKey = "",
   onProjectChange,
+  onRefreshProjects,
   onRefresh,
   onTimeRangeChange,
 }) => {
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingProjects, setRefreshingProjects] = useState(false);
   const [switchingRange, setSwitchingRange] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -287,6 +291,16 @@ const QALayout: React.FC<QALayoutProps> = ({
       setTimeout(() => setRefreshing(false), 800);
     }
   }, [onRefresh, refreshing]);
+
+  const handleRefreshProjects = useCallback(async () => {
+    if (!onRefreshProjects || refreshingProjects) return;
+    setRefreshingProjects(true);
+    try {
+      await onRefreshProjects();
+    } finally {
+      setRefreshingProjects(false);
+    }
+  }, [onRefreshProjects, refreshingProjects]);
 
   const handleTimeRangeChange = useCallback(
     async (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -401,13 +415,13 @@ const QALayout: React.FC<QALayoutProps> = ({
                   whiteSpace: "nowrap",
                 }}
               >
-                InSights AI
+                InSightsAI
               </div>
               <div
                 className="text-[10px]"
                 style={{ color: "var(--qa-text-muted)", whiteSpace: "nowrap" }}
               >
-                Intelligence Dashboard
+                AI Powered Project Analytics
               </div>
             </div>
           )}
@@ -526,7 +540,10 @@ const QALayout: React.FC<QALayoutProps> = ({
                           style={{ color: "var(--qa-success)" }}
                         />
                       ) : authMode === "session" ? (
-                        <Wifi size={10} style={{ color: "var(--qa-success)" }} />
+                        <Wifi
+                          size={10}
+                          style={{ color: "var(--qa-success)" }}
+                        />
                       ) : (
                         <WifiOff
                           size={10}
@@ -765,27 +782,51 @@ const QALayout: React.FC<QALayoutProps> = ({
 
             {/* Project selector */}
             {projects.length > 0 && onProjectChange && (
-              <select
-                value={selectedProjectKey}
-                onChange={(e) => {
-                  const p = projects.find((p) => p.key === e.target.value);
-                  if (p) onProjectChange(p.key, p.name);
-                }}
-                style={{ ...selectStyle, minWidth: 170, maxWidth: 220 }}
-              >
-                {projects.map((p) => (
-                  <option
-                    key={p.key}
-                    value={p.key}
+              <div className="flex items-center gap-1">
+                <SearchableProjectSelect
+                  projects={projects}
+                  value={selectedProjectKey}
+                  onChange={(key, name) => onProjectChange(key, name)}
+                  variant="header"
+                />
+                {onRefreshProjects && (
+                  <button
+                    onClick={() => void handleRefreshProjects()}
+                    disabled={refreshingProjects}
+                    title="Refresh project list"
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
-                      background: "var(--qa-bg-primary)",
-                      color: "var(--qa-text-primary)",
+                      background:
+                        "color-mix(in srgb, var(--qa-accent) 10%, transparent)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--qa-accent) 25%, transparent)",
+                      color: "var(--qa-text-muted)",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!refreshingProjects) {
+                        (
+                          e.currentTarget as HTMLButtonElement
+                        ).style.background =
+                          "color-mix(in srgb, var(--qa-accent) 20%, transparent)";
+                        (e.currentTarget as HTMLButtonElement).style.color =
+                          "var(--qa-accent)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "color-mix(in srgb, var(--qa-accent) 10%, transparent)";
+                      (e.currentTarget as HTMLButtonElement).style.color =
+                        "var(--qa-text-muted)";
                     }}
                   >
-                    {p.name} ({p.key})
-                  </option>
-                ))}
-              </select>
+                    <RefreshCw
+                      size={11}
+                      className={refreshingProjects ? "animate-spin" : ""}
+                    />
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Theme */}

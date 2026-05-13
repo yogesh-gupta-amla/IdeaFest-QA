@@ -561,17 +561,7 @@ const ProjectHealth: React.FC = () => {
             value: health.highSeverityCount,
             color: "#fa8c16",
           },
-          {
-            label: "SLA Breaches",
-            value: health.slaBreachCount,
-            color: "#ff0033",
-          },
           { label: "Reopened", value: health.reopenedCount, color: "#faad14" },
-          {
-            label: "Closure Rate",
-            value: `${(health.closureRate * 100).toFixed(0)}%`,
-            color: "#52c41a",
-          },
         ].map((stat) => (
           <Col key={stat.label} xs={12} sm={8} md={4}>
             <NeonCard

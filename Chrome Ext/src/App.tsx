@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+
+/** Decode HTML entities returned by the APT API (e.g. &amp; → &) */
+function decodeHtml(str: string): string {
+  const txt = document.createElement("textarea");
+  txt.innerHTML = str;
+  return txt.value;
+}
 import { useApp } from "./context/AppContext";
 import QADashboard from "./pages/QADashboard";
 import {
@@ -38,6 +45,7 @@ import {
 } from "./utils/queryTimeRange";
 import type { DateRange } from "./utils/queryTimeRange";
 import LandingScreen from "./components/Landing/LandingScreen";
+import { generateAptToken, fetchAptProjects } from "./services/aptService";
 
 /** Hardcoded Jira host — the dashboard only ever talks to the Amla tenant. */
 const JIRA_URL = "https://amla.atlassian.net";
@@ -77,6 +85,11 @@ export default function App() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [showQADashboard, setShowQADashboard] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  // Detect URL-param login synchronously so we can show a loader only for that flow
+  const [isUrlParamLogin] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return !!(p.get("email") && p.get("jiraToken"));
+  });
   const [pendingProject, setPendingProject] = useState<{
     key: string;
     name: string;
@@ -90,14 +103,21 @@ export default function App() {
     if (initial) applyTheme(initial);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initialise from storage on mount
+  // Default Jira base URL — can be overridden via URL param or storage
+  const DEFAULT_JIRA_URL =
+    (import.meta.env.VITE_DEFAULT_JIRA_URL as string) ||
+    "https://amla.atlassian.net";
+
+  // Initialise from storage on mount; also handle iframe URL param auto-login
   useEffect(() => {
     (async () => {
       const stored = await storageGet([
         "theme",
-        "jiraEmail",
+        "aptToken",
+        "aptEmail",
+        "jiraToken",
         "jiraTokenB64",
-        "authMode",
+        "jiraUrl",
         "lastActiveSection",
       ]);
       const t = (stored.theme as Theme) || "light";
@@ -107,26 +127,86 @@ export default function App() {
           .getState()
           .setActiveSection(stored.lastActiveSection as string);
       }
-      setJiraUrl(JIRA_URL);
-      if (stored.jiraTokenB64) setAuthToken(stored.jiraTokenB64 as string);
-      if (stored.authMode) {
-        const mode = stored.authMode as AuthMode;
-        if (mode === "token" && stored.jiraTokenB64) {
-          await attemptAutoConnect(
-            JIRA_URL,
-            stored.jiraTokenB64 as string,
-          ).catch(async () => {
-            setAuthMode("none");
-            setAuthToken(null);
-            setUser(null);
-            await storageSet({ authMode: "none" });
+
+      // ── Check for iframe URL params (email & jiraToken passed by parent app) ──
+      const params = new URLSearchParams(window.location.search);
+      const paramEmail = params.get("email");
+      const paramJiraToken = params.get("jiraToken");
+      const paramJiraUrl = params.get("jiraUrl");
+
+      if (paramEmail && paramJiraToken) {
+        // Remove tokens from URL immediately to avoid leaking them
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("email");
+        cleanUrl.searchParams.delete("jiraToken");
+        cleanUrl.searchParams.delete("jiraUrl");
+        window.history.replaceState({}, "", cleanUrl.toString());
+
+        const resolvedUrl =
+          (paramJiraUrl || "").trim().replace(/\/+$/, "") || DEFAULT_JIRA_URL;
+        const b64 = btoa(`${paramEmail.trim()}:${paramJiraToken.trim()}`);
+        try {
+          const aptToken = await generateAptToken(paramEmail.trim());
+          await storageSet({
+            aptToken,
+            aptEmail: paramEmail.trim(),
+            jiraToken: paramJiraToken.trim(),
+            jiraTokenB64: b64,
+            jiraUrl: resolvedUrl,
           });
-        } else {
-          setAuthMode("none");
-          setAuthToken(null);
-          setUser(null);
-          await storageSet({ authMode: "none" });
+          await attemptAutoConnect(
+            paramEmail.trim(),
+            b64,
+            resolvedUrl,
+            aptToken,
+          );
+          showToast(`Signed in as ${paramEmail.trim()}`, "success");
+        } catch {
+          // Fall through to stored-auth check below
         }
+        setInitializing(false);
+        return;
+      }
+
+      // ── Restore from stored credentials ──
+      if (stored.aptEmail && stored.jiraTokenB64) {
+        const storedUrl =
+          (stored.jiraUrl as string | undefined) || DEFAULT_JIRA_URL;
+        const storedEmail = stored.aptEmail as string;
+        const storedB64 = stored.jiraTokenB64 as string;
+        let aptToken = stored.aptToken as string | undefined;
+
+        // Helper: try connect, and if APT token is expired regenerate it first
+        const tryConnect = async () => {
+          if (!aptToken) {
+            // No stored APT token — generate fresh one
+            aptToken = await generateAptToken(storedEmail);
+            await storageSet({ aptToken });
+          }
+          try {
+            await attemptAutoConnect(
+              storedEmail,
+              storedB64,
+              storedUrl,
+              aptToken!,
+            );
+          } catch {
+            // APT token likely expired — regenerate and retry once
+            aptToken = await generateAptToken(storedEmail);
+            await storageSet({ aptToken });
+            await attemptAutoConnect(
+              storedEmail,
+              storedB64,
+              storedUrl,
+              aptToken,
+            );
+          }
+        };
+
+        await tryConnect().catch(() => {
+          setAuthMode("none");
+          setUser(null);
+        });
       }
       setInitializing(false);
     })();
@@ -137,10 +217,49 @@ export default function App() {
   }, [activeSection]);
 
   const attemptAutoConnect = useCallback(
-    async (url: string, token: string | null) => {
-      const auth = await validateAuth(url, token);
-      if (auth.success && auth.user) {
-        await onConnected(url, auth.user, "token", token);
+    async (
+      email: string,
+      jiraTokenB64: string,
+      jiraUrl: string,
+      aptToken: string,
+    ) => {
+      const aptProjects = await fetchAptProjects(aptToken);
+      const mapped: JiraProject[] = aptProjects.map((p) => ({
+        id: p.project_key,
+        key: p.project_key,
+        name: decodeHtml(p.project_name),
+        avatarUrl: "",
+      }));
+      const syntheticUser: JiraUser = {
+        displayName: email,
+        emailAddress: email,
+        avatarUrl: "",
+      };
+      setUser(syntheticUser);
+      setAuthMode("token");
+      setAuthToken(jiraTokenB64);
+      setJiraUrl(jiraUrl);
+      setProjects(mapped);
+      useDashboardStore
+        .getState()
+        .setJiraConfig(jiraUrl, jiraTokenB64, "token");
+
+      const saved = await storageGet([
+        "manualEntries",
+        "qaNotes",
+        "dsrRecipient",
+        "lastProjectKey",
+        "lastProjectName",
+      ]);
+      if (saved.manualEntries)
+        setManualEntries(saved.manualEntries as ManualEntry[]);
+      if (saved.qaNotes) setQaNotes(saved.qaNotes as QANote[]);
+      if (saved.dsrRecipient) setDsrRecipient(saved.dsrRecipient as string);
+      if (saved.lastProjectKey && saved.lastProjectName) {
+        setPendingProject({
+          key: saved.lastProjectKey as string,
+          name: saved.lastProjectName as string,
+        });
       }
     },
     [], // eslint-disable-line react-hooks/exhaustive-deps
@@ -187,34 +306,50 @@ export default function App() {
   );
 
   const handleConnect = useCallback(
-    async (_url: string, email?: string, token?: string) => {
-      // The Jira host is hardcoded — ignore whatever the caller passes.
-      const raw = JIRA_URL;
+    async (email: string, jiraToken: string, jiraUrl?: string) => {
+      const trimmedEmail = email.trim();
+      const trimmedToken = jiraToken.trim();
+      const trimmedUrl =
+        (jiraUrl || "").trim().replace(/\/+$/, "") ||
+        (import.meta.env.VITE_DEFAULT_JIRA_URL as string) ||
+        "https://amla.atlassian.net";
 
-      if (!email || !token) {
-        showToast("Enter Atlassian email and API token", "error");
+      if (!trimmedEmail || !trimmedEmail.includes("@")) {
+        showToast("Please enter a valid email address", "error");
+        return false;
+      }
+      if (!trimmedToken) {
+        showToast("Please enter your Jira API token", "error");
         return false;
       }
 
-      const b64 = btoa(`${email}:${token}`);
-      showToast("Authenticating with token…", "info");
-      const auth = await validateAuth(raw, b64);
-      if (auth.success && auth.user) {
+      const jiraTokenB64 = btoa(`${trimmedEmail}:${trimmedToken}`);
+      showToast("Generating APT token…", "info");
+      try {
+        const aptToken = await generateAptToken(trimmedEmail);
         await storageSet({
-          jiraEmail: email,
-          jiraTokenB64: b64,
-          authMode: "token",
+          aptToken,
+          aptEmail: trimmedEmail,
+          jiraToken: trimmedToken,
+          jiraTokenB64,
+          jiraUrl: trimmedUrl,
         });
-        await onConnected(raw, auth.user, "token", b64);
-      } else {
-        setAuthMode("none");
-        setUser(null);
-        showToast(auth.error || "Authentication failed", "error");
+        showToast("Loading projects…", "info");
+        await attemptAutoConnect(
+          trimmedEmail,
+          jiraTokenB64,
+          trimmedUrl,
+          aptToken,
+        );
+        showToast(`Signed in as ${trimmedEmail}`, "success");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        showToast(msg || "Sign in failed", "error");
         return false;
       }
       return true;
     },
-    [onConnected, showToast],
+    [attemptAutoConnect, showToast],
   );
 
   const handleLoadProject = useCallback(
@@ -552,6 +687,24 @@ export default function App() {
     handleLoadProject(key, name);
   }, [pendingProject, user, jiraUrl, handleLoadProject]);
 
+  const handleRefreshProjects = useCallback(async () => {
+    const stored = await storageGet(["aptToken"]);
+    const token = stored.aptToken as string | undefined;
+    if (!token) return;
+    try {
+      const aptProjects = await fetchAptProjects(token);
+      const mapped = aptProjects.map((p) => ({
+        id: p.project_key,
+        key: p.project_key,
+        name: decodeHtml(p.project_name),
+        avatarUrl: "",
+      }));
+      setProjects(mapped);
+    } catch {
+      showToast("Failed to refresh projects", "error");
+    }
+  }, [showToast]);
+
   const handleQaNotesChange = useCallback((notes: QANote[]) => {
     setQaNotes(notes);
     storageSet({ qaNotes: notes as unknown as Record<string, unknown>[] });
@@ -563,7 +716,9 @@ export default function App() {
   }, []);
 
   if (initializing) {
-    return <LoadingOverlay visible={true} text="Initializing…" />;
+    return isUrlParamLogin ? (
+      <LoadingOverlay visible={true} text="Signing in…" />
+    ) : null;
   }
 
   if (showQADashboard) {
@@ -580,13 +735,15 @@ export default function App() {
           projects={projects}
           selectedProjectKey={selectedProjectKey}
           onLoadProject={handleLoadProject}
+          onRefreshProjects={handleRefreshProjects}
           onLogout={async () => {
             // Clear persisted auth + cached data
             await storageRemove([
-              "jiraUrl", // legacy key — clear if present from earlier versions
-              "jiraEmail",
+              "aptToken",
+              "aptEmail",
+              "jiraToken",
               "jiraTokenB64",
-              "authMode",
+              "jiraUrl",
               "lastProjectKey",
               "lastProjectName",
               "manualEntries",
@@ -638,7 +795,6 @@ export default function App() {
       />
       <Toast toast={toast} />
       <LandingScreen
-        jiraUrl={jiraUrl}
         authMode={authMode}
         user={user}
         projects={projects}

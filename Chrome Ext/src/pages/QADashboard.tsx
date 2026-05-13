@@ -48,6 +48,7 @@ interface QADashboardInnerProps {
   selectedProjectKey?: string;
   onLoadProject?: (key: string, name: string) => void;
   onRefresh?: () => Promise<void> | void;
+  onRefreshProjects?: () => Promise<void> | void;
   onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
@@ -60,6 +61,7 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
   selectedProjectKey,
   onLoadProject,
   onRefresh,
+  onRefreshProjects,
   onTimeRangeChange,
 }) => {
   const { themeId, activeSection } = useDashboardStore();
@@ -82,6 +84,7 @@ const QADashboardInner: React.FC<QADashboardInnerProps> = ({
         selectedProjectKey={selectedProjectKey}
         onProjectChange={onLoadProject}
         onRefresh={onRefresh}
+        onRefreshProjects={onRefreshProjects}
         onTimeRangeChange={onTimeRangeChange}
       >
         {SECTION_MAP[activeSection] ?? <ProjectHealth />}
@@ -99,6 +102,7 @@ interface QADashboardProps {
   selectedProjectKey?: string;
   onLoadProject?: (key: string, name: string) => void;
   onRefresh?: () => Promise<void> | void;
+  onRefreshProjects?: () => Promise<void> | void;
   onTimeRangeChange?: (timeRange: QueryTimeRange) => Promise<void> | void;
 }
 
@@ -111,6 +115,7 @@ const QADashboard: React.FC<QADashboardProps> = ({
   selectedProjectKey,
   onLoadProject,
   onRefresh,
+  onRefreshProjects,
   onTimeRangeChange,
 }) => {
   return (
@@ -124,6 +129,7 @@ const QADashboard: React.FC<QADashboardProps> = ({
         selectedProjectKey={selectedProjectKey}
         onLoadProject={onLoadProject}
         onRefresh={onRefresh}
+        onRefreshProjects={onRefreshProjects}
         onTimeRangeChange={onTimeRangeChange}
       />
     </QueryClientProvider>

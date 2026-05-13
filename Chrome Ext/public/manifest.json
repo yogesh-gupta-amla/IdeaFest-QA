@@ -24,7 +24,8 @@
   "host_permissions": [
     "https://*.atlassian.net/*",
     "https://amla.atlassian.net/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://apt.amla.io/*"
   ],
   "web_accessible_resources": [
     {

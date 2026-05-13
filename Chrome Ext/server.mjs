@@ -155,6 +155,36 @@ app.use(
   }),
 );
 
+// ── APT reverse proxy ────────────────────────────────────────────────────────
+const APT_BASE_URL = process.env.VITE_APT_BASE_URL || "https://apt.amla.io";
+const APT_PROXY_PREFIX = normalizeProxyPrefix(
+  process.env.VITE_APT_PROXY_PREFIX || "/apt-proxy",
+);
+
+// Mount at root so http-proxy-middleware sees the full path and can rewrite it
+// correctly (v3 does not reliably strip the Express-mounted prefix from req.url).
+app.use(
+  createProxyMiddleware({
+    pathFilter: (path) =>
+      path === APT_PROXY_PREFIX || path.startsWith(`${APT_PROXY_PREFIX}/`),
+    target: APT_BASE_URL,
+    changeOrigin: true,
+    secure: true,
+    // Object form is the only form guaranteed to work in v3
+    pathRewrite: { [`^${APT_PROXY_PREFIX}`]: "" },
+    on: {
+      proxyRes: (_proxyRes, _req, res) => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+      },
+      error: (err, _req, res) => {
+        if (res && typeof res.status === "function" && !res.headersSent) {
+          res.status(502).json({ error: err.message || "APT proxy error" });
+        }
+      },
+    },
+  }),
+);
+
 // ── Static files (React build) ────────────────────────────────────────────────
 app.use(express.static(distDir));
 

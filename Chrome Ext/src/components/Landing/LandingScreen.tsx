@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import InsightsLogo from "../common/InsightsLogo";
+import SearchableProjectSelect from "../common/SearchableProjectSelect";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
 import {
   Lock,
@@ -13,14 +14,13 @@ import {
 const JIRA_URL = "https://amla.atlassian.net";
 
 interface LandingScreenProps {
-  jiraUrl: string;
   authMode: AuthMode;
   user: JiraUser | null;
   projects: JiraProject[];
   onConnect: (
-    url: string,
-    email?: string,
-    token?: string,
+    email: string,
+    jiraToken: string,
+    jiraUrl?: string,
   ) => Promise<boolean | void>;
   onLoadProject: (key: string, name: string) => void;
 }
@@ -49,7 +49,7 @@ export default function LandingScreen({
   onLoadProject,
 }: LandingScreenProps) {
   const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
+  const [jiraToken, setJiraToken] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
 
@@ -57,17 +57,14 @@ export default function LandingScreen({
 
   const handleTokenConnect = async () => {
     setConnecting(true);
-    await onConnect(JIRA_URL, email, token);
+    await onConnect(email, jiraToken);
     setConnecting(false);
   };
 
   const handleLoadDashboard = () => {
     if (!selectedKey) return;
     const project = projects.find((p) => p.key === selectedKey);
-    onLoadProject(
-      selectedKey,
-      project ? `${project.name} (${project.key})` : selectedKey,
-    );
+    onLoadProject(selectedKey, project ? project.name : selectedKey);
   };
 
   return (
@@ -141,13 +138,13 @@ export default function LandingScreen({
               animation: "text-shimmer 5s linear infinite",
             }}
           >
-            InSights AI
+            InSightsAI
           </h1>
           <p
             className="text-sm font-medium"
             style={{ color: "var(--text-muted, #64748b)" }}
           >
-            AI-Powered Dashboard
+            AI Powered Project Analytics
           </p>
 
           {/* Feature pills */}
@@ -206,7 +203,7 @@ export default function LandingScreen({
                 className="font-semibold text-sm"
                 style={{ color: "var(--text-heading, #e2e8f0)" }}
               >
-                {connected ? "Connected" : "Jira Credentials"}
+                {connected ? "Connected" : "Sign In"}
               </span>
             </div>
             {connected && user && (
@@ -214,7 +211,7 @@ export default function LandingScreen({
                 className="text-xs font-semibold"
                 style={{ color: "var(--health-green, #22c55e)" }}
               >
-                {user.displayName}
+                {user.emailAddress}
               </span>
             )}
           </div>
@@ -227,7 +224,7 @@ export default function LandingScreen({
                   className="text-xs font-medium mb-1.5 block"
                   style={{ color: "var(--text-muted, #94a3b8)" }}
                 >
-                  Atlassian Email
+                  Work Email
                 </label>
                 <input
                   type="email"
@@ -253,22 +250,26 @@ export default function LandingScreen({
                       "var(--border, rgba(255,255,255,0.1))";
                     e.currentTarget.style.boxShadow = "none";
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && email.trim())
+                      void handleTokenConnect();
+                  }}
                 />
               </div>
 
-              {/* API Token */}
+              {/* Jira API Token */}
               <div>
                 <label
                   className="text-xs font-medium mb-1.5 block"
                   style={{ color: "var(--text-muted, #94a3b8)" }}
                 >
-                  API Token
+                  Jira API Token
                 </label>
                 <input
                   type="password"
                   placeholder="Paste your Atlassian API token"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
+                  value={jiraToken}
+                  onChange={(e) => setJiraToken(e.target.value)}
                   autoComplete="off"
                   className="w-full rounded-xl text-sm outline-none transition-all duration-200"
                   style={{
@@ -289,16 +290,31 @@ export default function LandingScreen({
                     e.currentTarget.style.boxShadow = "none";
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && email && token)
+                    if (e.key === "Enter" && email.trim() && jiraToken.trim())
                       void handleTokenConnect();
                   }}
                 />
+                <p
+                  className="text-[10px] mt-1"
+                  style={{ color: "var(--text-muted, #64748b)" }}
+                >
+                  Generate at{" "}
+                  <a
+                    href="https://id.atlassian.com/manage-profile/security/api-tokens"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2"
+                    style={{ color: "var(--qa-text-secondary, #a78bfa)" }}
+                  >
+                    Atlassian → API Tokens
+                  </a>
+                </p>
               </div>
 
-              {/* Authenticate button */}
+              {/* Sign In button */}
               <button
                 onClick={handleTokenConnect}
-                disabled={connecting || !email.trim() || !token.trim()}
+                disabled={connecting || !email.trim() || !jiraToken.trim()}
                 className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-1"
                 style={{
                   background: `linear-gradient(135deg, var(--qa-accent, #8b5cf6), var(--qa-accent-hover, #6366f1))`,
@@ -318,24 +334,8 @@ export default function LandingScreen({
                 ) : (
                   <Lock size={13} />
                 )}
-                {connecting ? "Connecting…" : "Connect to Jira"}
+                {connecting ? "Signing in…" : "Sign In"}
               </button>
-
-              <p
-                className="text-xs text-center"
-                style={{ color: "var(--text-muted, #64748b)" }}
-              >
-                Generate a token at{" "}
-                <a
-                  href="https://id.atlassian.com/manage-profile/security/api-tokens"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2"
-                  style={{ color: "var(--qa-text-secondary, #a78bfa)" }}
-                >
-                  Atlassian → API Tokens
-                </a>
-              </p>
             </div>
           )}
         </div>
@@ -375,39 +375,15 @@ export default function LandingScreen({
             </div>
 
             {/* Project dropdown */}
-            <select
-              value={selectedKey}
-              onChange={(e) => setSelectedKey(e.target.value)}
-              className="w-full rounded-xl text-sm outline-none cursor-pointer mb-3 transition-all duration-200"
-              style={{
-                padding: "10px 14px",
-                background: "var(--input-bg, rgba(255,255,255,0.05))",
-                border: "1px solid var(--border, rgba(255,255,255,0.1))",
-                color: selectedKey
-                  ? "var(--text-heading, #e2e8f0)"
-                  : "var(--text-muted, #64748b)",
-                appearance: "none",
-                WebkitAppearance: "none",
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "right 14px center",
-                paddingRight: 36,
-              }}
-            >
-              <option value="">— Choose a project —</option>
-              {projects.map((p) => (
-                <option
-                  key={p.key}
-                  value={p.key}
-                  style={{
-                    background: "var(--qa-bg-primary, #0a0a1a)",
-                    color: "var(--qa-text-primary, #e2e8f0)",
-                  }}
-                >
-                  {p.name} ({p.key})
-                </option>
-              ))}
-            </select>
+            <div className="mb-3">
+              <SearchableProjectSelect
+                projects={projects}
+                value={selectedKey}
+                onChange={(key) => setSelectedKey(key)}
+                placeholder="— Choose a project —"
+                variant="landing"
+              />
+            </div>
 
             {/* Load Dashboard button */}
             <button
@@ -451,7 +427,7 @@ export default function LandingScreen({
           className="text-center text-xs mt-1"
           style={{ color: "var(--text-muted, #334155)" }}
         >
-          InSights AI · AI-Powered QA Analytics
+          InSightsAI - AI Powered Project Analytics
         </p>
       </div>
     </div>

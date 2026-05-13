@@ -173,6 +173,21 @@ app.use(
     // Object form is the only form guaranteed to work in v3
     pathRewrite: { [`^${APT_PROXY_PREFIX}`]: "" },
     on: {
+      proxyReq: (proxyReq, req) => {
+        // Forward the browser's User-Agent and cookies so Cloudflare (in front
+        // of apt.amla.io) does not treat this server-side request as a bot and
+        // return a 403 "Enable JavaScript and cookies" challenge page.
+        const ua = headerVal(req.headers["user-agent"]);
+        if (ua) proxyReq.setHeader("user-agent", ua);
+
+        const cookie = headerVal(req.headers["cookie"]);
+        if (cookie) proxyReq.setHeader("cookie", cookie);
+
+        // Remove headers that expose the proxy origin and can trigger
+        // Cloudflare cross-origin/CSRF checks.
+        proxyReq.removeHeader("origin");
+        proxyReq.removeHeader("referer");
+      },
       proxyRes: (_proxyRes, _req, res) => {
         res.setHeader("Access-Control-Allow-Origin", "*");
       },

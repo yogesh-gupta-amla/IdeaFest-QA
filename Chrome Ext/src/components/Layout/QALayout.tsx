@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { Layout } from "antd";
+import { Layout, Tour } from "antd";
+import type { TourProps } from "antd";
 import InsightsLogo from "../common/InsightsLogo";
 import {
   DashboardOutlined,
@@ -268,6 +269,8 @@ const QALayout: React.FC<QALayoutProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const timeRangeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -279,6 +282,39 @@ const QALayout: React.FC<QALayoutProps> = ({
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  // Show the tour on every login; auto-dismiss after 2 s.
+  useEffect(() => {
+    if (!onTimeRangeChange) return;
+    // Open after a short paint delay so the spotlight target is in the DOM.
+    const openTimer = setTimeout(() => setTourOpen(true), 800);
+    // Auto-close 2 s after it opens (800 ms delay + 2000 ms visible = 2800 ms total).
+    const closeTimer = setTimeout(() => setTourOpen(false), 2800);
+    return () => {
+      clearTimeout(openTimer);
+      clearTimeout(closeTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleTourClose = () => {
+    setTourOpen(false);
+  };
+
+  const tourSteps: TourProps["steps"] = [
+    {
+      title: "Set a wider date range for better insights",
+      description: (
+        <span>
+          Switch the time range to <strong>Last 6 Months</strong> to unlock
+          richer trend data — ageing analysis, bug-leakage patterns and AI
+          recommendations all improve significantly with more history.
+        </span>
+      ),
+      target: () => timeRangeRef.current,
+      placement: "bottomRight",
+    },
+  ];
 
   const SIDEBAR_W = isMobile ? 0 : collapsed ? 64 : 220;
 
@@ -748,7 +784,10 @@ const QALayout: React.FC<QALayoutProps> = ({
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {/* Time range */}
             {onTimeRangeChange && (
-              <div className="relative flex items-center gap-1.5">
+              <div
+                ref={timeRangeRef}
+                className="relative flex items-center gap-1.5"
+              >
                 <Timer
                   size={12}
                   className="pointer-events-none"
@@ -926,6 +965,16 @@ const QALayout: React.FC<QALayoutProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Daily onboarding tour — points user to the time-range selector */}
+      <Tour
+        open={tourOpen}
+        onClose={handleTourClose}
+        onFinish={handleTourClose}
+        steps={tourSteps}
+        mask={{ style: { boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)" } }}
+        indicatorsRender={() => null}
+      />
     </div>
   );
 };

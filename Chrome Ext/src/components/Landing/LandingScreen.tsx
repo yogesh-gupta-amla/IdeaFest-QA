@@ -2,12 +2,14 @@ import React, { useState } from "react";
 import InsightsLogo from "../common/InsightsLogo";
 import SearchableProjectSelect from "../common/SearchableProjectSelect";
 import type { AuthMode, JiraUser, JiraProject } from "../../types";
+import { IS_ADMIN_MODE } from "../../App";
 import {
   Lock,
   ChevronRight,
   CheckCircle2,
   FolderOpen,
   RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 
 /** Hardcoded Jira host for the IdeaFest QA dashboard. */
@@ -166,7 +168,31 @@ export default function LandingScreen({
           </div>
         </div>
 
-        {/* ── Step 1: Jira Credentials ── */}
+        {/* ── Step 1: Jira Credentials (hidden in admin mode) ── */}
+        {IS_ADMIN_MODE ? (
+          /* Admin mode — show a compact status badge instead of the login form */
+          <div
+            className="rounded-2xl px-5 py-4 flex items-center gap-3"
+            style={{
+              background: "var(--health-green-bg, rgba(34,197,94,0.07))",
+              border: "1px solid var(--health-green-border, rgba(34,197,94,0.3))",
+              backdropFilter: "blur(20px)",
+            }}
+          >
+            <ShieldCheck size={18} style={{ color: "var(--health-green, #22c55e)", flexShrink: 0 }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: "var(--health-green, #22c55e)" }}>
+                Admin Account Connected
+              </p>
+              {!connected && (
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted, #64748b)" }}>
+                  Connecting…
+                </p>
+              )}
+            </div>
+            {connected && <CheckCircle2 size={16} style={{ color: "var(--health-green, #22c55e)", flexShrink: 0 }} />}
+          </div>
+        ) : (
         <div
           className="rounded-2xl p-6 transition-all duration-300"
           style={{
@@ -339,6 +365,7 @@ export default function LandingScreen({
             </div>
           )}
         </div>
+        )} {/* end IS_ADMIN_MODE ternary */}
 
         {/* ── Step 2: Select Project ── */}
         {connected && (

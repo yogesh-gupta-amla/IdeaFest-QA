@@ -225,7 +225,8 @@ export const useAIRecommendations = () => {
         };
 
         let parsed: any = null;
-        if (typeof geminiRaw === "string") parsed = tryParseJsonFromText(geminiRaw);
+        if (typeof geminiRaw === "string")
+          parsed = tryParseJsonFromText(geminiRaw);
         else parsed = geminiRaw;
 
         const enriched = {

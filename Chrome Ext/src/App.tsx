@@ -46,9 +46,17 @@ import {
 import type { DateRange } from "./utils/queryTimeRange";
 import LandingScreen from "./components/Landing/LandingScreen";
 import { generateAptToken, fetchAptProjects } from "./services/aptService";
+import AccessGuard from "./components/common/AccessGuard";
 
 /** Hardcoded Jira host — the dashboard only ever talks to the Amla tenant. */
 const JIRA_URL = "https://amla.atlassian.net";
+
+/** Admin account credentials baked in at build time (optional).
+ *  When both VITE_ADMIN_EMAIL and VITE_ADMIN_TOKEN are set, every visitor is
+ *  automatically authenticated with the admin account and no login form is shown. */
+const ADMIN_EMAIL = ((import.meta.env.VITE_ADMIN_EMAIL as string) || "").trim();
+const ADMIN_TOKEN = ((import.meta.env.VITE_ADMIN_TOKEN as string) || "").trim();
+export const IS_ADMIN_MODE = !!(ADMIN_EMAIL && ADMIN_TOKEN);
 
 export default function App() {
   const {
@@ -85,10 +93,17 @@ export default function App() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [showQADashboard, setShowQADashboard] = useState(false);
   const [initializing, setInitializing] = useState(true);
-  // Detect URL-param login synchronously so we can show a loader only for that flow
+  // Capture the iframe URL param email once on mount (before the URL is cleaned)
+  const [urlParamEmail] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("email")?.trim() ?? "",
+  );
+
+  // Detect URL-param login synchronously so we can show a loader only for that flow.
+  // Supports email-only (token comes from VITE_ADMIN_TOKEN env).
   const [isUrlParamLogin] = useState(() => {
     const p = new URLSearchParams(window.location.search);
-    return !!(p.get("email") && p.get("jiraToken"));
+    return !!(p.get("email") && (p.get("jiraToken") || ADMIN_TOKEN));
   });
   const [pendingProject, setPendingProject] = useState<{
     key: string;
@@ -128,29 +143,31 @@ export default function App() {
           .setActiveSection(stored.lastActiveSection as string);
       }
 
-      // ── Check for iframe URL params (email & jiraToken passed by parent app) ──
+      // ── Check for iframe URL params first (email from URL, token from env) ──
+      // When only ?email= is supplied the Jira token is read from VITE_ADMIN_TOKEN,
+      // so the parent app only needs to pass the user's identity, not credentials.
       const params = new URLSearchParams(window.location.search);
       const paramEmail = params.get("email");
       const paramJiraToken = params.get("jiraToken");
       const paramJiraUrl = params.get("jiraUrl");
+      const effectiveJiraToken = (paramJiraToken || ADMIN_TOKEN).trim();
 
-      if (paramEmail && paramJiraToken) {
-        // Remove tokens from URL immediately to avoid leaking them
+      if (paramEmail && effectiveJiraToken) {
+        // Strip sensitive tokens from URL but keep ?email= for persistent identity.
         const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete("email");
         cleanUrl.searchParams.delete("jiraToken");
         cleanUrl.searchParams.delete("jiraUrl");
         window.history.replaceState({}, "", cleanUrl.toString());
 
         const resolvedUrl =
           (paramJiraUrl || "").trim().replace(/\/+$/, "") || DEFAULT_JIRA_URL;
-        const b64 = btoa(`${paramEmail.trim()}:${paramJiraToken.trim()}`);
+        const b64 = btoa(`${paramEmail.trim()}:${effectiveJiraToken}`);
         try {
           const aptToken = await generateAptToken(paramEmail.trim());
           await storageSet({
             aptToken,
             aptEmail: paramEmail.trim(),
-            jiraToken: paramJiraToken.trim(),
+            jiraToken: effectiveJiraToken,
             jiraTokenB64: b64,
             jiraUrl: resolvedUrl,
           });
@@ -163,6 +180,57 @@ export default function App() {
           showToast(`Signed in as ${paramEmail.trim()}`, "success");
         } catch {
           // Fall through to stored-auth check below
+        }
+        setInitializing(false);
+        return;
+      }
+
+      // ── Admin mode: auto-connect with hardcoded admin credentials ──
+      if (IS_ADMIN_MODE) {
+        const adminB64 = btoa(`${ADMIN_EMAIL}:${ADMIN_TOKEN}`);
+        const resolvedUrl = DEFAULT_JIRA_URL;
+        // Reuse stored APT token when the admin credentials haven't changed
+        let aptToken =
+          stored.aptEmail === ADMIN_EMAIL && stored.jiraTokenB64 === adminB64
+            ? (stored.aptToken as string | undefined)
+            : undefined;
+        try {
+          if (!aptToken) {
+            aptToken = await generateAptToken(ADMIN_EMAIL);
+            await storageSet({
+              aptToken,
+              aptEmail: ADMIN_EMAIL,
+              jiraToken: ADMIN_TOKEN,
+              jiraTokenB64: adminB64,
+              jiraUrl: resolvedUrl,
+            });
+          }
+          await attemptAutoConnect(
+            ADMIN_EMAIL,
+            adminB64,
+            resolvedUrl,
+            aptToken!,
+          );
+        } catch {
+          // APT token may have expired — regenerate once and retry
+          try {
+            aptToken = await generateAptToken(ADMIN_EMAIL);
+            await storageSet({
+              aptToken,
+              aptEmail: ADMIN_EMAIL,
+              jiraToken: ADMIN_TOKEN,
+              jiraTokenB64: adminB64,
+              jiraUrl: resolvedUrl,
+            });
+            await attemptAutoConnect(
+              ADMIN_EMAIL,
+              adminB64,
+              resolvedUrl,
+              aptToken!,
+            );
+          } catch {
+            setAuthMode("none");
+          }
         }
         setInitializing(false);
         return;
@@ -230,8 +298,15 @@ export default function App() {
         name: decodeHtml(p.project_name),
         avatarUrl: "",
       }));
+      // Derive display name: "john.doe@company.com" → "John Doe"
+      const displayName = email.includes("@")
+        ? email
+            .split("@")[0]
+            .replace(/[._-]+/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase())
+        : email;
       const syntheticUser: JiraUser = {
-        displayName: email,
+        displayName,
         emailAddress: email,
         avatarUrl: "",
       };
@@ -353,9 +428,15 @@ export default function App() {
   );
 
   const handleLoadProject = useCallback(
-    async (projectKey: string, projectName: string) => {
+    async (
+      projectKey: string,
+      projectName: string,
+      overrideTimeRange?: QueryTimeRange,
+    ) => {
       const store = useDashboardStore.getState();
-      const timeRange = store.queryTimeRange;
+      // Use explicitly supplied time range when available (e.g. called from
+      // handleTimeRangeChange) so there is no dependency on store flush timing.
+      const timeRange = overrideTimeRange ?? store.queryTimeRange;
       const dateRange = store.dateRange;
 
       setSelectedProjectKey(projectKey);
@@ -376,7 +457,17 @@ export default function App() {
 
       showLoading(`Fetching all data for ${projectKey}…`);
 
-      const token = authMode === "token" ? authToken : null;
+      // ── Jira auth — always built fresh from env constants ──────────────────
+      // generateAptToken is ONLY called in attemptAutoConnect for the project
+      // list (APT). All Jira REST API calls use Basic auth with the email from
+      // the URL param (iframe mode) or VITE_ADMIN_EMAIL + VITE_ADMIN_TOKEN.
+      // Reading from React state (authToken/authMode) can be stale inside a
+      // useCallback closure, so we bypass it entirely here.
+      const jiraEmail = urlParamEmail || ADMIN_EMAIL;
+      const jiraToken =
+        jiraEmail && ADMIN_TOKEN ? btoa(`${jiraEmail}:${ADMIN_TOKEN}`) : null;
+      // Fall back to the hardcoded constant when jiraUrl state hasn't been set.
+      const effectiveJiraUrl = (jiraUrl || JIRA_URL).replace(/\/+$/, "");
 
       // Progress callback — updates the loading overlay with live counts
       const onProgress = (fetched: number, total: number, label: string) => {
@@ -459,9 +550,9 @@ export default function App() {
         setLoadingText(`Fetching ${q.label} for ${projectKey}…`);
         setLoadingProgress(null); // reset per-query progress
         results[key] = await fetchAllPages(
-          jiraUrl,
+          effectiveJiraUrl,
           q.jql,
-          token,
+          jiraToken,
           onProgress,
           q.label,
         );
@@ -483,7 +574,11 @@ export default function App() {
       // ── Fetch sprint info in parallel (it's a single lightweight call) ──
       setLoadingText(`Fetching sprint info for ${projectKey}…`);
       setLoadingProgress(null);
-      const sprintResult = await fetchActiveSprint(jiraUrl, projectKey, token);
+      const sprintResult = await fetchActiveSprint(
+        effectiveJiraUrl,
+        projectKey,
+        jiraToken,
+      );
 
       // Abort early if user cancelled
       if (cancelRef.current) {
@@ -554,9 +649,9 @@ export default function App() {
       if (codeIntelIssueIds.length > 0) {
         try {
           const devResult = await fetchDevInfo(
-            jiraUrl,
+            effectiveJiraUrl,
             codeIntelIssueIds,
-            token,
+            jiraToken,
           );
           if (devResult.success && devResult.devInfo) {
             devInfoMap = devResult.devInfo;
@@ -642,8 +737,6 @@ export default function App() {
       setShowQADashboard(true);
     },
     [
-      authMode,
-      authToken,
       jiraUrl,
       showLoading,
       hideLoading,
@@ -666,7 +759,13 @@ export default function App() {
       store.setDateRange(null);
 
       if (selectedProjectKey && selectedProjectName) {
-        await handleLoadProject(selectedProjectKey, selectedProjectName);
+        // Pass timeRange explicitly so handleLoadProject doesn't race against
+        // the Zustand store flush.
+        await handleLoadProject(
+          selectedProjectKey,
+          selectedProjectName,
+          timeRange,
+        );
       }
     },
     [handleLoadProject, selectedProjectKey, selectedProjectName],
@@ -770,6 +869,40 @@ export default function App() {
 
             setShowQADashboard(false);
             showToast("Logged out", "success");
+
+            // Reconnect so the user lands on the project-selection screen.
+            // Priority: iframe-mode email (from URL param) → admin-mode email (from env).
+            const reconnectEmail = urlParamEmail || ADMIN_EMAIL;
+
+            // Keep email visible in the URL so the project list remains tied
+            // to the user identity throughout the session (even after logout).
+            if (reconnectEmail) {
+              const urlAfterLogout = new URL(window.location.href);
+              urlAfterLogout.searchParams.set("email", reconnectEmail);
+              window.history.replaceState({}, "", urlAfterLogout.toString());
+            }
+
+            if (reconnectEmail && ADMIN_TOKEN) {
+              const reconnectB64 = btoa(`${reconnectEmail}:${ADMIN_TOKEN}`);
+              try {
+                const aptToken = await generateAptToken(reconnectEmail);
+                await storageSet({
+                  aptToken,
+                  aptEmail: reconnectEmail,
+                  jiraToken: ADMIN_TOKEN,
+                  jiraTokenB64: reconnectB64,
+                  jiraUrl: DEFAULT_JIRA_URL,
+                });
+                await attemptAutoConnect(
+                  reconnectEmail,
+                  reconnectB64,
+                  DEFAULT_JIRA_URL,
+                  aptToken,
+                );
+              } catch {
+                /* stay on landing screen */
+              }
+            }
           }}
           onTimeRangeChange={handleTimeRangeChange}
           onRefresh={() => {

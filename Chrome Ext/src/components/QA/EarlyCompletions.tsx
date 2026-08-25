@@ -138,12 +138,13 @@ const EarlyCompletions: React.FC = () => {
     [contributors],
   );
 
+  // Both slices are drawn from tasks completed WITHIN their estimate, so the
+  // donut always sums to totalDoneItems (the early-completion denominator).
   const pieData = useMemo(() => {
     if (!data) return [];
-    const normalCount = data.totalDoneItems - data.totalEarlyItems;
     return [
-      { name: "Early Completed", value: data.totalEarlyItems },
-      { name: "Normal Completed", value: normalCount > 0 ? normalCount : 0 },
+      { name: `Early (≥${data.earlyThresholdPercent}% saved)`, value: data.totalEarlyItems },
+      { name: "On Time (within estimate)", value: data.onTimeItems },
     ];
   }, [data]);
 
@@ -243,7 +244,16 @@ const EarlyCompletions: React.FC = () => {
   if (!data || data.totalDoneItems === 0) {
     return (
       <div style={{ textAlign: "center", padding: 60, opacity: 0.5 }}>
-        No completed issues with time tracking found for the selected range.
+        No completed issues finished within their estimated time for the
+        selected range.
+        {data && data.totalIssuesAnalyzed > 0 && (
+          <div style={{ fontSize: 12, marginTop: 8 }}>
+            {data.totalIssuesAnalyzed} Done issue
+            {data.totalIssuesAnalyzed === 1 ? "" : "s"} had an estimate —{" "}
+            {data.excludedNoTimeLogged} logged no time and{" "}
+            {data.excludedOverEstimate} ran over estimate.
+          </div>
+        )}
       </div>
     );
   }
@@ -290,7 +300,8 @@ const EarlyCompletions: React.FC = () => {
             🏆 Early Completion Contributors
           </h2>
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Status = Done | Time Spent &gt; 0 | Difference % ≥ 20% •{" "}
+            Status = Done | Original Estimate &gt; 0 | Time Spent &gt; 0 | Time
+            Spent ≤ Estimate | Difference % ≥ {data.earlyThresholdPercent}% •{" "}
             {rangeLabel}
           </span>
         </div>
@@ -316,6 +327,25 @@ const EarlyCompletions: React.FC = () => {
             prefix={<FundOutlined style={{ color: "#1890ff" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2 }}>
+            Done · estimate &gt; 0
+          </div>
+        </NeonCard>
+        <NeonCard
+          accent="#1890ff"
+          rainbow={false}
+          speed="slow"
+          bodyStyle={{ padding: "12px 16px" }}
+        >
+          <Statistic
+            title="Within Estimate"
+            value={data.totalDoneItems}
+            prefix={<ExperimentOutlined style={{ color: "#1890ff" }} />}
+            valueStyle={{ fontSize: 22, fontWeight: 700 }}
+          />
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2 }}>
+            basis for Early %
+          </div>
         </NeonCard>
         <NeonCard
           accent="#52c41a"
@@ -329,6 +359,9 @@ const EarlyCompletions: React.FC = () => {
             prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
             valueStyle={{ fontSize: 22, fontWeight: 700 }}
           />
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2 }}>
+            ≥{data.earlyThresholdPercent}% saved · {data.onTimeItems} on time
+          </div>
         </NeonCard>
         <NeonCard
           accent="#faad14"
@@ -372,6 +405,61 @@ const EarlyCompletions: React.FC = () => {
           />
         </NeonCard>
       </div>
+
+      {/* ── 🔍 Scope Breakdown — what was excluded and why ── */}
+      <NeonCard bodyStyle={{ padding: "12px 16px" }}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            marginBottom: 8,
+            opacity: 0.85,
+          }}
+        >
+          🔍 Analysis Scope
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            alignItems: "center",
+            fontSize: 12,
+          }}
+        >
+          <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>
+            Done with estimate: {data.totalIssuesAnalyzed}
+          </Tag>
+          <span style={{ opacity: 0.4 }}>=</span>
+          <Tag color="green" style={{ margin: 0, fontWeight: 600 }}>
+            Within estimate: {data.totalDoneItems}
+          </Tag>
+          <span style={{ opacity: 0.4 }}>+</span>
+          <Tag style={{ margin: 0 }}>
+            No time logged: {data.excludedNoTimeLogged}
+          </Tag>
+          <span style={{ opacity: 0.4 }}>+</span>
+          <Tag color="volcano" style={{ margin: 0 }}>
+            Over estimate: {data.excludedOverEstimate}
+          </Tag>
+          {data.excludedNoEstimate > 0 && (
+            <>
+              <span style={{ opacity: 0.4 }}>·</span>
+              <Tag color="default" style={{ margin: 0 }}>
+                Excluded — 0 min estimated: {data.excludedNoEstimate}
+              </Tag>
+            </>
+          )}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.55, marginTop: 8 }}>
+          Tasks with 0 minutes estimated are out of scope entirely. Only the{" "}
+          {data.totalDoneItems} tasks completed within their estimated time feed
+          the early-completion analysis — of those,{" "}
+          <strong>{data.totalEarlyItems}</strong> saved ≥
+          {data.earlyThresholdPercent}% (Early) and{" "}
+          <strong>{data.onTimeItems}</strong> saved less (On Time).
+        </div>
+      </NeonCard>
 
       {/* ── 🥇 Top Performer Banner ── */}
       {topContributor && (
@@ -1188,15 +1276,25 @@ const EarlyCompletions: React.FC = () => {
                   },
                 data.earlyCompletionPercentage > 60 && {
                   icon: "📊",
-                  text: `${data.earlyCompletionPercentage.toFixed(0)}% early completion rate is very high. Review if estimates are systematically padded — tighter estimates improve planning accuracy.`,
+                  text: `${data.earlyCompletionPercentage.toFixed(0)}% of the ${data.totalDoneItems} tasks completed within estimate saved ≥${data.earlyThresholdPercent}% of their time. Review if estimates are systematically padded — tighter estimates improve planning accuracy.`,
                   priority: "Medium",
                 },
                 data.earlyCompletionPercentage < 15 &&
                   data.totalEarlyItems > 0 && {
                     icon: "🎯",
-                    text: `Only ${data.earlyCompletionPercentage.toFixed(0)}% early completion rate. Consider breaking down complex tasks to enable faster delivery cycles.`,
+                    text: `Only ${data.earlyCompletionPercentage.toFixed(0)}% of within-estimate tasks saved ≥${data.earlyThresholdPercent}% — most finished close to their estimate. Consider breaking down complex tasks to enable faster delivery cycles.`,
                     priority: "Low",
                   },
+                data.excludedOverEstimate > data.totalDoneItems && {
+                  icon: "⏰",
+                  text: `${data.excludedOverEstimate} of ${data.totalIssuesAnalyzed} estimated tasks ran OVER estimate — more than the ${data.totalDoneItems} that stayed within it. Early completions are the minority here; review estimation and scope control before celebrating the savings.`,
+                  priority: "High",
+                },
+                data.excludedNoTimeLogged > 0 && {
+                  icon: "🕳️",
+                  text: `${data.excludedNoTimeLogged} Done task${data.excludedNoTimeLogged === 1 ? "" : "s"} had an estimate but no logged time, so they could not be assessed. Enforce worklog entry at closure to keep this analysis complete.`,
+                  priority: "Medium",
+                },
                 {
                   icon: "📈",
                   text: "Track early completion trends weekly. Consistently high rates may indicate estimation bloat; declining rates may signal complexity increase.",
@@ -1204,7 +1302,19 @@ const EarlyCompletions: React.FC = () => {
                 },
               ]
                 .filter(Boolean)
-                .slice(0, 5)
+                // Highest-priority actions first, so the cap never drops a
+                // High-priority finding in favour of a Low-priority one.
+                .sort((a, b) => {
+                  const rank = { High: 0, Medium: 1, Low: 2 } as Record<
+                    string,
+                    number
+                  >;
+                  return (
+                    (rank[(a as { priority: string }).priority] ?? 3) -
+                    (rank[(b as { priority: string }).priority] ?? 3)
+                  );
+                })
+                .slice(0, 6)
                 .map(
                   (rec, i) =>
                     rec && (

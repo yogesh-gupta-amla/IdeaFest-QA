@@ -80,10 +80,17 @@ export interface ProjectHealthResult {
   summary: string;
   keyDrivers: string[];
   totalIssues: number;
+  /** Active issues at priority = Critical (subset of totalIssues) */
+  criticalCount: number;
+  /** Active issues at priority = Blocker (subset of totalIssues) */
+  blockerCount: number;
+  /** criticalCount + blockerCount */
   criticalBlockerCount: number;
   highSeverityCount: number;
   slaBreachCount: number;
   reopenedCount: number;
+  /** Size of the lifetime ageing Critical/Blocker JQL — context only, not a KPI */
+  ageingCriticalBlockerCount: number;
   defectTrend: TrendPoint[];
   severityDistribution: SeverityBucket[];
   closureRate: number;
@@ -352,13 +359,27 @@ export interface EarlyCompletionItem {
 }
 
 export interface EarlyCompletionAnalysis {
+  /** Early-completed items only (>= EARLY_COMPLETION_THRESHOLD_PCT saved) */
   items: EarlyCompletionItem[];
   totalEarlyItems: number;
+  /** Completed within estimate (time spent <= original estimate) — the
+   *  denominator for earlyCompletionPercentage */
   totalDoneItems: number;
+  /** Done issues with an original estimate > 0 — the in-scope population */
   totalIssuesAnalyzed: number;
   avgTimeSavedHours: number;
   avgPercentSaved: number;
   earlyCompletionPercentage: number;
+  /** Completed within estimate but saved less than the early threshold */
+  onTimeItems: number;
+  /** Done issues dropped because no original estimate was set */
+  excludedNoEstimate: number;
+  /** Done issues (with an estimate) dropped because no time was logged */
+  excludedNoTimeLogged: number;
+  /** Done issues dropped because time spent exceeded the original estimate */
+  excludedOverEstimate: number;
+  /** The "% saved" cut-off that separates Early Completed from On Time */
+  earlyThresholdPercent: number;
 }
 
 export interface DashboardFilters {

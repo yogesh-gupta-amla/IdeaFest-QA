@@ -100,17 +100,22 @@ export const calculateProjectHealth = (
             (i.issueType === "Bug" || i.issueType === "Defect"),
         );
   const total = active.length;
-  // Critical/Blocker comes from the ageing JQL (Bug/Defect, Blocker|Critical, not-Done).
-  const criticalBlockerCount =
-    ageingIssues && ageingIssues.length > 0
-      ? ageingIssues.length
-      : active.filter(
-          (i) => i.priority === "Critical" || i.priority === "Blocker",
-        ).length;
+
+  // Every severity/reopen count below is a SUBSET of `active` so the KPI row is
+  // internally consistent: Critical + Blocker + High + Reopened can never exceed
+  // Total Active Issues. Previously Critical/Blocker was sourced from the ageing
+  // JQL (lifetime, no created-date bound) while the total came from the
+  // date-bounded active-issues JQL, so the card could read higher than the total.
+  const criticalCount = active.filter((i) => i.priority === "Critical").length;
+  const blockerCount = active.filter((i) => i.priority === "Blocker").length;
+  const criticalBlockerCount = criticalCount + blockerCount;
   const highSeverityCount = active.filter((i) => i.priority === "High").length;
   const reopenedCount = active.filter(
     (i) => i.reopenCount > 0 || i.status === "Reopened",
   ).length;
+  // Ageing dataset is no longer used for the Critical/Blocker KPI (see above);
+  // it is kept as a signal for the ageing-backlog driver below.
+  const ageingCriticalBlockerCount = ageingIssues ? ageingIssues.length : 0;
 
   const slaBreachedIssues = active.filter((i) => {
     const elapsed = hoursSince(i.created);
@@ -134,7 +139,9 @@ export const calculateProjectHealth = (
     createdInLast7d > 0 ? resolvedInLast7d / createdInLast7d : 1;
   const creationRate = createdInLast7d;
 
+  // All ratios share Total Active Issues as the denominator.
   const criticalBlockerRatio = total > 0 ? criticalBlockerCount / total : 0;
+  const highSeverityRatio = total > 0 ? highSeverityCount / total : 0;
   const reopenedRatio = total > 0 ? reopenedCount / total : 0;
 
   // RED conditions
@@ -144,17 +151,26 @@ export const calculateProjectHealth = (
     reopenedRatio > 0.15 ||
     closureRate < 0.8;
 
+  const pctOfActive = (n: number) =>
+    total > 0 ? `${((n / total) * 100).toFixed(1)}% of ${total} active` : "0%";
+
   const drivers: string[] = [];
   if (criticalBlockerRatio > 0.05)
     drivers.push(
-      `${criticalBlockerCount} Critical/Blocker issues (${(criticalBlockerRatio * 100).toFixed(1)}% of total)`,
+      `${criticalBlockerCount} Critical/Blocker issues — ${blockerCount} Blocker + ${criticalCount} Critical (${pctOfActive(criticalBlockerCount)})`,
     );
   if (slaBreachCount > 0)
     drivers.push(
-      `${slaBreachCount} SLA breach${slaBreachCount > 1 ? "es" : ""} detected`,
+      `${slaBreachCount} SLA breach${slaBreachCount > 1 ? "es" : ""} detected (${pctOfActive(slaBreachCount)})`,
+    );
+  if (highSeverityRatio > 0.25)
+    drivers.push(
+      `${highSeverityCount} High-severity issues carried in the active backlog (${pctOfActive(highSeverityCount)})`,
     );
   if (reopenedRatio > 0.15)
-    drivers.push(`High reopen rate: ${reopenedCount} reopened issues`);
+    drivers.push(
+      `High reopen rate: ${reopenedCount} reopened issues (${pctOfActive(reopenedCount)})`,
+    );
   if (closureRate < 0.8)
     drivers.push(
       `Closure rate (${(closureRate * 100).toFixed(0)}%) below creation rate`,
@@ -227,10 +243,13 @@ export const calculateProjectHealth = (
     summary,
     keyDrivers: drivers,
     totalIssues: total,
+    criticalCount,
+    blockerCount,
     criticalBlockerCount,
     highSeverityCount,
     slaBreachCount,
     reopenedCount,
+    ageingCriticalBlockerCount,
     defectTrend,
     severityDistribution,
     closureRate,
@@ -1057,6 +1076,9 @@ export const generateAIRecommendations = (
 
 // ─── 8. Early Completions ───────────────────────────────────────────────────
 
+/** % of the original estimate that must be saved to count as Early Completed. */
+export const EARLY_COMPLETION_THRESHOLD_PCT = 20;
+
 export const calculateEarlyCompletions = (
   issues: QAIssue[],
 ): EarlyCompletionAnalysis => {
@@ -1068,35 +1090,49 @@ export const calculateEarlyCompletions = (
       i.status === "Closed",
   );
 
-  // STRICT: Exclude issues where Original Estimate is missing or zero
+  // STRICT: Exclude tasks with 0 minutes of Original Estimate. Anything without
+  // an estimate has nothing to be "early" against, so it is out of scope — this
+  // set is what "Total Issues Analyzed" reports.
   const withEstimate = doneIssues.filter(
     (i) => i.timeEstimate > 0 && i.resolved,
   );
 
   // STRICT: Exclude issues where Time Spent (Time Tracking) = 0
-  const validIssues = withEstimate.filter((i) => (i.timeLogged || 0) > 0);
+  const withTimeLogged = withEstimate.filter((i) => (i.timeLogged || 0) > 0);
+
+  // NOTE: timeEstimate / timeLogged are already in HOURS (jiraService divides
+  // the raw Jira seconds by 3600). Dividing again here collapsed every estimate
+  // to 0 and made differencePercent NaN, so nothing ever qualified as early.
+  const toHours = (h: number) => Math.round(h * 100) / 100;
+
+  // Consider ONLY tasks completed within their estimated time. An overrun is by
+  // definition not an early completion, and leaving overruns in the denominator
+  // mixed two different populations into one percentage.
+  const withinEstimate = withTimeLogged.filter(
+    (i) => (i.timeLogged || 0) <= i.timeEstimate,
+  );
+  const excludedOverEstimate = withTimeLogged.length - withinEstimate.length;
 
   const earlyItems: EarlyCompletionItem[] = [];
+  let onTimeItems = 0;
 
-  for (const issue of validIssues) {
-    const originalEstimateSeconds = issue.timeEstimate;
-    const timeSpentSeconds = issue.timeLogged || 0;
-    const originalEstimateHours =
-      Math.round((originalEstimateSeconds / 3600) * 100) / 100;
-    const timeTakenHours = Math.round((timeSpentSeconds / 3600) * 100) / 100;
+  for (const issue of withinEstimate) {
+    const originalEstimateHours = toHours(issue.timeEstimate);
+    const timeTakenHours = toHours(issue.timeLogged || 0);
 
     // Difference % = ((Original Estimate - Time Spent) / Original Estimate) * 100
+    // Guaranteed >= 0 here because the set is restricted to within-estimate work.
     const differencePercent =
-      Math.round(
-        ((originalEstimateHours - timeTakenHours) / originalEstimateHours) *
-          10000,
-      ) / 100;
+      originalEstimateHours > 0
+        ? Math.round(
+            ((originalEstimateHours - timeTakenHours) / originalEstimateHours) *
+              10000,
+          ) / 100
+        : 0;
 
-    const timeSavedHours =
-      Math.round((originalEstimateHours - timeTakenHours) * 100) / 100;
+    const timeSavedHours = toHours(originalEstimateHours - timeTakenHours);
 
-    // If Difference % >= 20% → Early Completed
-    if (differencePercent >= 20) {
+    if (differencePercent >= EARLY_COMPLETION_THRESHOLD_PCT) {
       earlyItems.push({
         issue,
         createdDate: issue.created,
@@ -1106,6 +1142,9 @@ export const calculateEarlyCompletions = (
         timeSavedHours,
         differencePercent,
       });
+    } else {
+      // Within estimate but under the threshold — On Time, not Early.
+      onTimeItems++;
     }
   }
 
@@ -1113,8 +1152,12 @@ export const calculateEarlyCompletions = (
   earlyItems.sort((a, b) => b.differencePercent - a.differencePercent);
 
   const totalEarlyItems = earlyItems.length;
-  const totalDoneItems = validIssues.length;
-  const totalIssuesAnalyzed = doneIssues.length;
+  // Denominator = tasks completed within their estimate (early + on time).
+  const totalDoneItems = withinEstimate.length;
+  // In-scope population = Done AND original estimate > 0.
+  const totalIssuesAnalyzed = withEstimate.length;
+  const excludedNoEstimate = doneIssues.length - withEstimate.length;
+  const excludedNoTimeLogged = withEstimate.length - withTimeLogged.length;
   const avgTimeSavedHours =
     totalEarlyItems > 0
       ? Math.round(
@@ -1144,6 +1187,11 @@ export const calculateEarlyCompletions = (
     avgTimeSavedHours,
     avgPercentSaved,
     earlyCompletionPercentage,
+    onTimeItems,
+    excludedNoEstimate,
+    excludedNoTimeLogged,
+    excludedOverEstimate,
+    earlyThresholdPercent: EARLY_COMPLETION_THRESHOLD_PCT,
   };
 };
 

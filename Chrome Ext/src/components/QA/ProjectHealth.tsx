@@ -40,6 +40,19 @@ const SEVERITY_COLORS: Record<string, string> = {
   Low: "#52c41a",
 };
 
+/** Tag colours for Recommended Actions — antd preset names. */
+const LEVEL_COLORS = {
+  Technical: "geekblue",
+  Delivery: "cyan",
+  Project: "purple",
+} as const;
+
+const PRIORITY_COLORS = {
+  High: "red",
+  Medium: "orange",
+  Low: "default",
+} as const;
+
 // ─── AI Prompt Analysis Helpers ───────────────────────────────────────────────
 
 const EXCLUDED_STATUSES = [
@@ -141,6 +154,35 @@ function getDateRange(timeRange: QueryTimeRange): {
   return { start, end };
 }
 
+/** Who the action is aimed at. */
+type ActionPerspective = "QA" | "Manager";
+/** Which layer the action operates on. */
+type ActionLevel = "Technical" | "Delivery" | "Project";
+type ActionPriority = "High" | "Medium" | "Low";
+
+interface HealthRecommendation {
+  perspective: ActionPerspective;
+  level: ActionLevel;
+  priority: ActionPriority;
+  text: string;
+}
+
+/**
+ * Severity / reopen counts, every one of them a SUBSET of `totalActive`
+ * (the Total Active Issues KPI). Supplied by `calculateProjectHealth` so the
+ * Risk Insights quote exactly the numbers shown on the KPI cards.
+ */
+interface ActiveIssueCounts {
+  totalActive: number;
+  critical: number;
+  blocker: number;
+  criticalBlocker: number;
+  high: number;
+  reopened: number;
+  slaBreach: number;
+  closureRate: number;
+}
+
 interface AIHealthAnalysis {
   healthStatus: "GREEN" | "ORANGE";
   healthReason: string;
@@ -154,10 +196,11 @@ interface AIHealthAnalysis {
   throughput: "High" | "Medium" | "Low";
   qaVelocityCount: number;
   inTestingCount: number;
-  recommendations: string[];
+  recommendations: HealthRecommendation[];
   totalIssues: number;
   priorityMap: Record<string, number>;
   blockerCriticalCount: number;
+  activeCounts: ActiveIssueCounts;
   statusMap: Record<string, number>;
   productSideCount: number;
   launchSideCount: number;
@@ -185,6 +228,9 @@ function analyzeHealthData(
   timeRange: QueryTimeRange,
   ageingIssues?: JiraIssue[],
   activeIssues?: JiraIssue[],
+  /** KPI counts from calculateProjectHealth — keeps Risk Insights in sync
+   *  with the KPI cards. Recomputed locally from `activeBugs` if omitted. */
+  kpiCounts?: ActiveIssueCounts,
 ): AIHealthAnalysis {
   const { start, end } = getDateRange(timeRange);
   // Normalize priorities upfront so "Highest" → "Blocker", etc.
@@ -202,6 +248,39 @@ function analyzeHealthData(
     normalizedRaw,
     normalizedCreated,
     normalizedResolved,
+  );
+
+  // ── Counts anchored to Total Active Issues ──────────────────────────────
+  // Prefer the counts computed by calculateProjectHealth (same numbers the KPI
+  // cards render); recompute from activeBugs when they weren't supplied.
+  const activeCounts: ActiveIssueCounts = kpiCounts ?? {
+    totalActive: activeBugs.length,
+    critical: activeBugs.filter((i) => i.priority === "Critical").length,
+    blocker: activeBugs.filter((i) => i.priority === "Blocker").length,
+    criticalBlocker: activeBugs.filter(
+      (i) => i.priority === "Critical" || i.priority === "Blocker",
+    ).length,
+    high: activeBugs.filter((i) => i.priority === "High").length,
+    reopened: activeBugs.filter(
+      (i) =>
+        (i.reopenCount ?? 0) > 0 || i.status.trim().toLowerCase() === "reopened",
+    ).length,
+    slaBreach: 0,
+    closureRate: 1,
+  };
+
+  const totalActive = activeCounts.totalActive;
+  const shareOfActive = (n: number) => (totalActive > 0 ? n / totalActive : 0);
+  const pctOfActive = (n: number) =>
+    `${(shareOfActive(n) * 100).toFixed(1)}%`;
+  const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+  const criticalBlockerShare = shareOfActive(activeCounts.criticalBlocker);
+  const highShare = shareOfActive(activeCounts.high);
+  const reopenedShare = shareOfActive(activeCounts.reopened);
+  // Blocker + Critical + High together — the "must not ship" slice.
+  const severeShare = shareOfActive(
+    activeCounts.criticalBlocker + activeCounts.high,
   );
 
   // Three JQL categories (client-side)
@@ -231,24 +310,27 @@ function analyzeHealthData(
     priorityMap[i.priority] = (priorityMap[i.priority] || 0) + 1;
   });
 
-  // Use ageing dataset (canonical lifetime Critical/Blocker query) when available
-  // This syncs the count with the Ageing Analysis tab
-  const blockerCriticalCount =
-    normalizedAgeing.length > 0
-      ? normalizedAgeing.length
-      : (priorityMap["Blocker"] ?? 0) + (priorityMap["Critical"] ?? 0);
-  const highSeverityRatio = total > 0 ? blockerCriticalCount / total : 0;
-  const highSeveritySpike = total > 0 && highSeverityRatio > 0.4;
+  // Blocker/Critical count now comes from the SAME active-issues set that feeds
+  // the Total Active Issues KPI, so the risk percentages below can never exceed
+  // 100%. (It previously came from the ageing JQL, which is lifetime-scoped and
+  // measured against a period-scoped denominator.)
+  const blockerCriticalCount = activeCounts.criticalBlocker;
+  const highSeveritySpike = totalActive > 0 && criticalBlockerShare > 0.15;
 
-  // RED area distribution — use ageing issues (same as Ageing tab) when available
-  const highSeveritySource =
-    normalizedAgeing.length > 0
-      ? normalizedAgeing
-      : issuesInPeriod.filter(
-          (i) => i.priority === "Blocker" || i.priority === "Critical",
-        );
+  // RED area distribution — driven by the high-severity slice of the ACTIVE
+  // backlog. Falls back to the full active set, then to period-created issues.
+  const activeHighSeverity = activeBugs.filter(
+    (i) =>
+      i.priority === "Blocker" ||
+      i.priority === "Critical" ||
+      i.priority === "High",
+  );
   const redAreaSource =
-    highSeveritySource.length > 0 ? highSeveritySource : issuesInPeriod;
+    activeHighSeverity.length > 0
+      ? activeHighSeverity
+      : activeBugs.length > 0
+        ? activeBugs
+        : issuesInPeriod;
 
   // Component distribution
   const componentMap: Record<string, number> = {};
@@ -309,7 +391,7 @@ function analyzeHealthData(
   } else {
     if (highSeveritySpike)
       healthReasonParts.push(
-        `${(highSeverityRatio * 100).toFixed(0)}% Blocker/Critical — exceeds 40% threshold`,
+        `${pctOfActive(activeCounts.criticalBlocker)} of active issues are Blocker/Critical — exceeds 15% threshold`,
       );
     if (unitLevelHigh)
       healthReasonParts.push(
@@ -322,22 +404,61 @@ function analyzeHealthData(
   }
   const healthReason = healthReasonParts.join(" · ");
 
-  // Key risks
+  // ── Key risks ───────────────────────────────────────────────────────────
+  // Every severity/reopen risk below is measured against Total Active Issues
+  // so the percentages are directly comparable to the KPI cards.
   const risks: string[] = [];
+
+  if (activeCounts.blocker > 0)
+    risks.push(
+      `🔴 ${activeCounts.blocker} Blocker ${plural(activeCounts.blocker, "issue", "issues")} still open (${pctOfActive(activeCounts.blocker)} of ${totalActive} active) — release-blocking`,
+    );
   if (highSeveritySpike)
     risks.push(
-      `🔴 ${(highSeverityRatio * 100).toFixed(0)}% of new issues are Blocker/Critical — high severity spike`,
+      `🔴 ${activeCounts.criticalBlocker} of ${totalActive} active issues are Blocker/Critical (${pctOfActive(activeCounts.criticalBlocker)}) — exceeds the 15% threshold`,
     );
-  if (redAreas.length > 0 && highSeveritySpike)
+  else if (activeCounts.criticalBlocker > 0)
     risks.push(
-      `🔴 Top impacted modules: ${redAreas
+      `🟠 ${activeCounts.criticalBlocker} Blocker/Critical ${plural(activeCounts.criticalBlocker, "issue", "issues")} in the active backlog (${pctOfActive(activeCounts.criticalBlocker)} of ${totalActive})`,
+    );
+  if (highShare > 0.3)
+    risks.push(
+      `🔴 ${activeCounts.high} High-severity ${plural(activeCounts.high, "issue", "issues")} (${pctOfActive(activeCounts.high)} of active) — High severity dominates the backlog`,
+    );
+  else if (activeCounts.high > 0)
+    risks.push(
+      `🟠 ${activeCounts.high} High-severity ${plural(activeCounts.high, "issue", "issues")} open (${pctOfActive(activeCounts.high)} of ${totalActive} active)`,
+    );
+  if (reopenedShare > 0.15)
+    risks.push(
+      `🔴 ${activeCounts.reopened} reopened ${plural(activeCounts.reopened, "issue", "issues")} (${pctOfActive(activeCounts.reopened)} of active) — exceeds the 15% threshold, points to weak fix verification`,
+    );
+  else if (activeCounts.reopened > 0)
+    risks.push(
+      `🟠 ${activeCounts.reopened} reopened ${plural(activeCounts.reopened, "issue", "issues")} in the active backlog (${pctOfActive(activeCounts.reopened)}) — re-verify the ${plural(activeCounts.reopened, "fix", "fixes")} before closure`,
+    );
+  if (severeShare > 0.5 && totalActive > 0)
+    risks.push(
+      `🔴 ${activeCounts.criticalBlocker + activeCounts.high} of ${totalActive} active issues are Blocker/Critical/High (${(severeShare * 100).toFixed(1)}%) — over half the backlog is must-fix`,
+    );
+  if (activeCounts.slaBreach > 0)
+    risks.push(
+      `🔴 ${activeCounts.slaBreach} active ${plural(activeCounts.slaBreach, "issue has", "issues have")} breached ${plural(activeCounts.slaBreach, "its", "their")} priority SLA (${pctOfActive(activeCounts.slaBreach)} of active)`,
+    );
+  if (redAreas.length > 0 && (highSeveritySpike || highShare > 0.3))
+    risks.push(
+      `🔴 Top impacted modules (active Blocker/Critical/High): ${redAreas
         .slice(0, 3)
         .map(([k, v]) => `${k} (${v})`)
         .join(", ")}`,
     );
+  if (normalizedAgeing.length > activeCounts.criticalBlocker)
+    risks.push(
+      `🟠 ${normalizedAgeing.length - activeCounts.criticalBlocker} Critical/Blocker issues are ageing outside the selected window — carried-over debt not counted in the ${totalActive} active total`,
+    );
   if (unitLevelHigh)
     risks.push(
-      `🔴 ${unitLevelPct.toFixed(1)}% Unit Level defects — indicates poor unit testing or early leakage`,
+      `🔴 ${unitLevelPct.toFixed(1)}% Unit Level defects among the ${total} bugs created this period — indicates poor unit testing or early leakage`,
     );
   if (qaVelocityLow)
     risks.push(
@@ -345,45 +466,228 @@ function analyzeHealthData(
     );
   if (productSideCount > 0)
     risks.push(
-      `🟠 ${productSideCount} issues blocked on product side — pending owner resolution`,
+      `🟠 ${productSideCount} active ${plural(productSideCount, "issue", "issues")} blocked on product side (${pctOfActive(productSideCount)}) — pending owner resolution`,
+    );
+  if (activeCounts.closureRate < 0.8)
+    risks.push(
+      `🟠 Closure rate is ${(activeCounts.closureRate * 100).toFixed(0)}% — issues are being created faster than they are resolved, so the ${totalActive} active count will keep growing`,
     );
   if (total > 20 && !highSeveritySpike)
     risks.push(
-      `🟠 ${total} new bugs/defects in this period — elevated defect creation rate`,
+      `🟠 ${total} new bugs/defects created in this period — elevated defect creation rate`,
     );
 
-  // Recommended actions
-  const recommendations: string[] = [];
-  if (highSeveritySpike) {
-    const topComp = redAreas[0]?.[0];
-    recommendations.push(
-      `⚡ Conduct immediate triage on ${topComp ? `"${topComp}"` : "high-severity modules"}. Assign senior QA engineers to all Blocker/Critical items.`,
+  // ── Recommended actions ─────────────────────────────────────────────
+  // Two audiences, three levels:
+  //   QA      → what the test team executes (Technical / Delivery / Project)
+  //   Manager → what the delivery owner decides (Technical / Delivery / Project)
+  // Conditional actions fire off the active-issue counts; the closing block
+  // tops each perspective up with standing practice so neither column is empty.
+  const recommendations: HealthRecommendation[] = [];
+  const addAction = (
+    perspective: ActionPerspective,
+    level: ActionLevel,
+    priority: ActionPriority,
+    text: string,
+  ) => recommendations.push({ perspective, level, priority, text });
+
+  const topComp = redAreas[0]?.[0];
+  const topCompLabel = topComp ? `"${topComp}"` : "the highest-defect modules";
+  const topCompCount = redAreas[0]?.[1] ?? 0;
+  const secondComp = redAreas[1]?.[0];
+
+  // ── QA · Technical ──
+  if (activeCounts.blocker > 0)
+    addAction(
+      "QA",
+      "Technical",
+      "High",
+      `Re-test and sign off the ${activeCounts.blocker} open ${plural(activeCounts.blocker, "Blocker", "Blockers")} first — ${plural(activeCounts.blocker, "pair it with its", "pair each one with its")} developer, reproduce on the latest build, and attach evidence before moving it out of Blocker.`,
     );
-  }
+  if (activeCounts.criticalBlocker > 0)
+    addAction(
+      "QA",
+      "Technical",
+      criticalBlockerShare > 0.15 ? "High" : "Medium",
+      `Run a focused regression suite over ${topCompLabel}${topCompCount ? ` (${topCompCount} active high-severity issues)` : ""}${secondComp ? ` and ${secondComp}` : ""} — that is where the ${activeCounts.criticalBlocker} Blocker/Critical issues (${pctOfActive(activeCounts.criticalBlocker)} of active) are concentrated.`,
+    );
+  if (activeCounts.reopened > 0)
+    addAction(
+      "QA",
+      "Technical",
+      reopenedShare > 0.15 ? "High" : "Medium",
+      `Add a regression test for ${plural(activeCounts.reopened, "the", "each of the")} ${activeCounts.reopened} reopened ${plural(activeCounts.reopened, "issue", "issues")} (${pctOfActive(activeCounts.reopened)} of active) and tighten the closure checklist — a reopen means the original fix was verified too narrowly.`,
+    );
   if (unitLevelHigh)
-    recommendations.push(
-      `⚡ Enforce unit test reviews before code merge. ${unitLevelCount} unit-level defects indicate pre-integration quality gaps.`,
+    addAction(
+      "QA",
+      "Technical",
+      "High",
+      `${unitLevelCount} unit-level defects (${unitLevelPct.toFixed(1)}% of bugs created this period) are leaking past development — require unit-test evidence in the PR before accepting a build into QA.`,
+    );
+
+  // ── QA · Delivery ──
+  if (qaVelocityLow)
+    addAction(
+      "QA",
+      "Delivery",
+      "High",
+      `Drain the "Ready For Testing" queue — ${inTestingCount} items waiting against ${qaVelocityCount} completed. Split the queue by severity, run high-severity lanes in parallel, and publish a daily burn-down.`,
+    );
+  if (activeCounts.high > 0)
+    addAction(
+      "QA",
+      "Delivery",
+      highShare > 0.3 ? "High" : "Medium",
+      `Time-box verification of the ${activeCounts.high} High-severity ${plural(activeCounts.high, "issue", "issues")} (${pctOfActive(activeCounts.high)} of active) into this sprint so ${plural(activeCounts.high, "it does", "they do")} not roll into the Blocker/Critical bucket next cycle.`,
+    );
+  addAction(
+    "QA",
+    "Delivery",
+    "Medium",
+    `Hold a daily triage on the ${totalActive} active issues — confirm severity, owner and target build for each, so the Blocker (${activeCounts.blocker}) / Critical (${activeCounts.critical}) / High (${activeCounts.high}) / Reopened (${activeCounts.reopened}) split stays accurate.`,
+  );
+
+  // ── QA · Project ──
+  addAction(
+    "QA",
+    "Project",
+    severeShare > 0.5 ? "High" : "Medium",
+    `Report release readiness against a hard exit gate: zero open Blockers and Critical/Blocker under 15% of active. Current position: ${activeCounts.blocker} ${plural(activeCounts.blocker, "Blocker", "Blockers")}, ${pctOfActive(activeCounts.criticalBlocker)} Critical/Blocker, ${(severeShare * 100).toFixed(1)}% of the backlog must-fix.`,
+  );
+  if (redAreas.length > 1)
+    addAction(
+      "QA",
+      "Project",
+      "Low",
+      `Build a component risk heat-map from the RED areas (${redAreas
+        .slice(0, 3)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ")}) and use it to steer test-automation investment next quarter.`,
+    );
+
+  // ── Manager · Technical ──
+  if (highSeveritySpike || activeCounts.blocker > 0)
+    addAction(
+      "Manager",
+      "Technical",
+      "High",
+      `Assign a senior engineer to own ${topCompLabel} end-to-end until the Blocker/Critical count is ${
+        Math.floor(totalActive * 0.15) === 0
+          ? "cleared to zero"
+          : `down to at most ${Math.floor(totalActive * 0.15)}`
+      } (the 15% ceiling on ${totalActive} active issues) — today it is ${activeCounts.criticalBlocker}.`,
+    );
+  if (unitLevelHigh || reopenedShare > 0.15)
+    addAction(
+      "Manager",
+      "Technical",
+      "High",
+      `Tighten the Definition of Done: mandatory unit tests and a peer code review before a story leaves development. ${[
+        unitLevelHigh
+          ? `${unitLevelCount} unit-level ${plural(unitLevelCount, "defect", "defects")}`
+          : null,
+        activeCounts.reopened > 0
+          ? `${activeCounts.reopened} ${plural(activeCounts.reopened, "reopen", "reopens")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" and ")} ${plural(
+        (unitLevelHigh ? 1 : 0) + (activeCounts.reopened > 0 ? 1 : 0),
+        "is",
+        "are",
+      )} the cost of the current gate.`,
+    );
+
+  // ── Manager · Delivery ──
+  if (productSideCount > 0)
+    addAction(
+      "Manager",
+      "Delivery",
+      "High",
+      `Escalate the ${productSideCount} product-side blocked ${plural(productSideCount, "issue", "issues")} (${pctOfActive(productSideCount)} of active) — name an owner and a dated ETA${plural(productSideCount, "", " for each")}, and review ${plural(productSideCount, "it", "them")} in the daily stand-up until cleared.`,
+    );
+  if (activeCounts.closureRate < 0.8)
+    addAction(
+      "Manager",
+      "Delivery",
+      "High",
+      `Closure rate is ${(activeCounts.closureRate * 100).toFixed(0)}% — the backlog is growing. Either re-scope the sprint or add QA/dev capacity; at this rate the ${totalActive} active issues will not clear within the release window.`,
+    );
+  if (severeShare > 0.5 || activeCounts.blocker > 0)
+    addAction(
+      "Manager",
+      "Delivery",
+      "High",
+      `Re-plan the sprint around the must-fix slice: ${activeCounts.criticalBlocker + activeCounts.high} of ${totalActive} active issues (${(severeShare * 100).toFixed(1)}%) are Blocker/Critical/High. Defer new feature scope until that share is under 30%.`,
     );
   if (qaVelocityLow)
-    recommendations.push(
-      `⚡ Clear the "Ready For Testing" backlog (${inTestingCount} items). Consider parallel testing or additional QA resources.`,
+    addAction(
+      "Manager",
+      "Delivery",
+      "Medium",
+      `Fund the QA bottleneck — ${inTestingCount} items are queued for testing against ${qaVelocityCount} completed. Either add a tester to the rotation or stagger dev hand-offs so the queue stays under ${Math.max(5, qaVelocityCount)} items.`,
     );
-  if (productSideCount > 0)
-    recommendations.push(
-      `⚡ Escalate ${productSideCount} blocked product-side issues with defined owner ETAs and daily follow-ups.`,
+
+  // ── Manager · Project ──
+  addAction(
+    "Manager",
+    "Project",
+    activeCounts.blocker > 0 || severeShare > 0.5 ? "High" : "Medium",
+    `Take the go/no-go call on evidence, not sentiment: ${totalActive} active issues — ${activeCounts.blocker} Blocker, ${activeCounts.critical} Critical, ${activeCounts.high} High, ${activeCounts.reopened} Reopened. Record the accepted residual risk in the risk register with a named owner.`,
+  );
+  if (normalizedAgeing.length > activeCounts.criticalBlocker)
+    addAction(
+      "Manager",
+      "Project",
+      "Medium",
+      `${normalizedAgeing.length - activeCounts.criticalBlocker} Critical/Blocker issues predate this window and sit outside the ${totalActive} active count. Schedule a dedicated debt-burn slot or formally accept and close them — carrying them silently distorts every forecast.`,
     );
-  if (recommendations.length < 3)
-    recommendations.push(
-      `✅ Maintain daily triage cadence to prevent severity accumulation across sprints.`,
+  addAction(
+    "Manager",
+    "Project",
+    "Low",
+    `Share the severity mix and closure trend with stakeholders weekly, and set an alert when Blocker/Critical crosses 15% of active issues so the escalation is automatic rather than discovered late.`,
+  );
+
+  // Standing practice — guarantees both perspectives are represented.
+  const qaActionCount = recommendations.filter(
+    (r) => r.perspective === "QA",
+  ).length;
+  const mgrActionCount = recommendations.filter(
+    (r) => r.perspective === "Manager",
+  ).length;
+  if (qaActionCount < 3)
+    addAction(
+      "QA",
+      "Technical",
+      "Low",
+      `Keep the regression pack aligned to the top-defect components and re-baseline it each sprint so the ${totalActive} active issues stay covered.`,
     );
-  if (recommendations.length < 4)
-    recommendations.push(
-      `✅ Review test coverage for components with recurring defects to reduce reopen rates.`,
+  if (mgrActionCount < 3)
+    addAction(
+      "Manager",
+      "Delivery",
+      "Low",
+      `Keep a weekly quality checkpoint on the calendar — severity mix, closure rate and reopen rate — so a rising Critical/Blocker share is caught in the same week it appears.`,
     );
-  if (recommendations.length < 5)
-    recommendations.push(
-      `✅ Set up automated alerts for Blocker/Critical spike detection to enable faster response.`,
-    );
+
+  // Highest-impact actions first within each perspective.
+  const priorityRank: Record<ActionPriority, number> = {
+    High: 0,
+    Medium: 1,
+    Low: 2,
+  };
+  const levelRank: Record<ActionLevel, number> = {
+    Technical: 0,
+    Delivery: 1,
+    Project: 2,
+  };
+  recommendations.sort(
+    (a, b) =>
+      priorityRank[a.priority] - priorityRank[b.priority] ||
+      levelRank[a.level] - levelRank[b.level],
+  );
 
   // Per-period breakdown — sourced from the SAME issuesInPeriod set the KPI
   // counts so the table header sum equals the "Bugs in Period" KPI.
@@ -459,6 +763,7 @@ function analyzeHealthData(
     totalIssues: total,
     priorityMap,
     blockerCriticalCount,
+    activeCounts,
     statusMap,
     productSideCount,
     launchSideCount,
@@ -480,6 +785,26 @@ const ProjectHealth: React.FC = () => {
   const periodCreatedIssues = projectMetrics?.todayCreated ?? [];
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
 
+  // The KPI cards and the Risk Insights must quote identical numbers, so the
+  // counts calculateProjectHealth derived from the Total Active Issues set are
+  // handed straight to the analysis instead of being recomputed independently.
+  const kpiCounts: ActiveIssueCounts | undefined = useMemo(
+    () =>
+      health
+        ? {
+            totalActive: health.totalIssues,
+            critical: health.criticalCount,
+            blocker: health.blockerCount,
+            criticalBlocker: health.criticalBlockerCount,
+            high: health.highSeverityCount,
+            reopened: health.reopenedCount,
+            slaBreach: health.slaBreachCount,
+            closureRate: health.closureRate,
+          }
+        : undefined,
+    [health],
+  );
+
   const analysis = useMemo(
     () =>
       analyzeHealthData(
@@ -489,6 +814,7 @@ const ProjectHealth: React.FC = () => {
         queryTimeRange,
         ageingIssues,
         activeIssues,
+        kpiCounts,
       ),
     [
       periodCreatedIssues,
@@ -497,6 +823,7 @@ const ProjectHealth: React.FC = () => {
       recentlyResolved,
       ageingIssues,
       activeIssues,
+      kpiCounts,
     ],
   );
 
@@ -543,25 +870,40 @@ const ProjectHealth: React.FC = () => {
         </Button>
       </div>
 
-      {/* KPI Stats */}
+      {/* KPI Stats — Critical, Blocker, High Severity and Reopened are all
+          subsets of Total Active Issues, so each shows its share of the total. */}
       <Row gutter={[16, 16]}>
         {[
           {
             label: "Total Active Issues",
             value: health.totalIssues,
             color: "var(--qa-accent)",
+            share: null as number | null,
           },
           {
-            label: "Critical / Blocker",
-            value: health.criticalBlockerCount,
+            label: "Critical",
+            value: health.criticalCount,
             color: "#ff4d4f",
+            share: health.criticalCount,
+          },
+          {
+            label: "Blocker",
+            value: health.blockerCount,
+            color: "#ff0033",
+            share: health.blockerCount,
           },
           {
             label: "High Severity",
             value: health.highSeverityCount,
             color: "#fa8c16",
+            share: health.highSeverityCount,
           },
-          { label: "Reopened", value: health.reopenedCount, color: "#faad14" },
+          {
+            label: "Reopened",
+            value: health.reopenedCount,
+            color: "#faad14",
+            share: health.reopenedCount,
+          },
         ].map((stat) => (
           <Col key={stat.label} xs={12} sm={8} md={4}>
             <NeonCard
@@ -583,6 +925,20 @@ const ProjectHealth: React.FC = () => {
                   color: stat.color,
                 }}
               />
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--qa-text-muted)",
+                  marginTop: 2,
+                  minHeight: 14,
+                }}
+              >
+                {stat.share === null
+                  ? "Bug/Defect · not Done"
+                  : health.totalIssues > 0
+                    ? `${((stat.share / health.totalIssues) * 100).toFixed(1)}% of active`
+                    : "—"}
+              </div>
             </NeonCard>
           </Col>
         ))}
@@ -1309,36 +1665,148 @@ const ProjectHealth: React.FC = () => {
               <div
                 style={{
                   fontWeight: 700,
-                  marginBottom: 10,
+                  marginBottom: 4,
                   color: "var(--qa-text-primary)",
                 }}
               >
                 ✅ Recommended Actions
               </div>
-              {analysis.recommendations.map((rec, i) => (
-                <div
-                  key={i}
-                  style={{
-                    fontSize: 13,
-                    color: "var(--qa-text-secondary)",
-                    marginBottom: 8,
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <span
-                    style={{
-                      minWidth: 20,
-                      color: "var(--qa-accent)",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {i + 1}.
-                  </span>
-                  <span>{rec}</span>
-                </div>
-              ))}
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--qa-text-muted)",
+                  marginBottom: 12,
+                }}
+              >
+                QA and Manager views of the same data — each action tagged
+                Technical, Delivery or Project level.
+              </div>
+              <Row gutter={[16, 16]}>
+                {(
+                  [
+                    {
+                      perspective: "QA" as ActionPerspective,
+                      heading: "🧪 QA Perspective",
+                      accent: "#13c2c2",
+                    },
+                    {
+                      perspective: "Manager" as ActionPerspective,
+                      heading: "📋 Manager Perspective",
+                      accent: "#722ed1",
+                    },
+                  ] as const
+                ).map((group) => {
+                  const items = analysis.recommendations.filter(
+                    (r) => r.perspective === group.perspective,
+                  );
+                  return (
+                    <Col key={group.perspective} xs={24} lg={12}>
+                      <div
+                        style={{
+                          background: `${group.accent}0d`,
+                          border: `1px solid ${group.accent}40`,
+                          borderRadius: 10,
+                          padding: 14,
+                          height: "100%",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 13,
+                            color: group.accent,
+                            marginBottom: 10,
+                          }}
+                        >
+                          {group.heading}{" "}
+                          <span
+                            style={{
+                              fontWeight: 500,
+                              color: "var(--qa-text-muted)",
+                            }}
+                          >
+                            ({items.length})
+                          </span>
+                        </div>
+                        {items.length === 0 ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: "var(--qa-text-muted)",
+                            }}
+                          >
+                            No actions required.
+                          </div>
+                        ) : (
+                          items.map((rec, i) => (
+                            <div
+                              key={`${group.perspective}-${i}`}
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "flex-start",
+                                marginBottom: 10,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  minWidth: 18,
+                                  color: group.accent,
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  lineHeight: "20px",
+                                }}
+                              >
+                                {i + 1}.
+                              </span>
+                              <div style={{ flex: 1 }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: 4,
+                                    flexWrap: "wrap",
+                                    marginBottom: 3,
+                                  }}
+                                >
+                                  <Tag
+                                    style={{
+                                      margin: 0,
+                                      fontSize: 10,
+                                      lineHeight: "16px",
+                                    }}
+                                    color={LEVEL_COLORS[rec.level]}
+                                  >
+                                    {rec.level}
+                                  </Tag>
+                                  <Tag
+                                    style={{
+                                      margin: 0,
+                                      fontSize: 10,
+                                      lineHeight: "16px",
+                                    }}
+                                    color={PRIORITY_COLORS[rec.priority]}
+                                  >
+                                    {rec.priority}
+                                  </Tag>
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 12.5,
+                                    color: "var(--qa-text-secondary)",
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  {rec.text}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </Col>
+                  );
+                })}
+              </Row>
             </div>
           </Col>
         </Row>
